@@ -3,12 +3,21 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 
+/** Public Render (or other) origin for Socket.io + API when building for production. */
+const PRODUCTION_SOCKET_URL = 'https://family-hubs.onrender.com';
+
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  const viteSocketUrl =
+    env.VITE_SOCKET_URL || (mode === 'production' ? PRODUCTION_SOCKET_URL : '');
+
   return {
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      ...(viteSocketUrl
+        ? {'import.meta.env.VITE_SOCKET_URL': JSON.stringify(viteSocketUrl)}
+        : {}),
     },
     resolve: {
       alias: {
