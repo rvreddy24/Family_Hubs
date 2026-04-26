@@ -5,11 +5,12 @@ import assert from 'node:assert/strict';
 import type { User } from '@supabase/supabase-js';
 import { mayMutateTask } from './realtimeHelpers';
 
+// Roles are read from app_metadata only (user_metadata is not trusted for auth).
 const u = (id: string, role?: string): User =>
   ({
     id,
-    app_metadata: {},
-    user_metadata: role ? { role } : {},
+    app_metadata: role ? { role } : {},
+    user_metadata: {},
   }) as User;
 
 assert.equal(
