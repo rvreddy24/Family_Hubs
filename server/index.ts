@@ -16,6 +16,7 @@ import { setupSocketHandlers } from './socket';
 import { apiRouter } from './routes/api';
 import { attachSocketAuth } from './socketAuth';
 import { hydrateFromDatabase, isPersistenceEnabled, persistState } from './persistence';
+import { runDemoProvision } from './demoProvision';
 
 // ESM-safe __dirname (this file runs as an ES module: package.json has "type": "module").
 const __filename = fileURLToPath(import.meta.url);
@@ -113,6 +114,8 @@ const start = async () => {
   } catch (e) {
     console.warn('[Server] DB hydrate optional skip:', (e as Error).message);
   }
+  // Supabase Auth demo users + in-memory seed (family + provider; optional hub admin) — not SQL
+  await runDemoProvision();
   httpServer.listen(PORT, () => {
     console.log(`\n  ╔══════════════════════════════════════════╗`);
     console.log(`  ║  FamilyHubs.in — Real-Time Engine        ║`);

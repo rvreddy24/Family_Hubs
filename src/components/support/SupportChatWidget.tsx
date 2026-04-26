@@ -10,7 +10,7 @@
  * Mounts once at the app root and renders nothing for unauthenticated users
  * or for admins (admins use the in-dashboard `SupportConsole`).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronLeft,
@@ -221,7 +221,11 @@ function ChatThreadView({
             </div>
           </div>
         ) : (
-          messages.map(m => <MessageBubble key={m.id} message={m} selfIsUser />)
+          messages.map(m => (
+            <Fragment key={m.id}>
+              <MessageBubble message={m} selfIsUser={true} />
+            </Fragment>
+          ))
         )}
       </div>
       <div className="px-3 py-2.5 border-t border-gray-100 bg-white rounded-b-2xl">

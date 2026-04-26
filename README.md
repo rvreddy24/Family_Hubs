@@ -1,71 +1,190 @@
 # FamilyHubs.in
 
-Full-stack care coordination for NRI families: **Vite + React** (port **3000**) and **Express + Socket.io** (port **3001**). The browser proxies `/api`, `/socket.io`, and `/health` to the API server in development.
+Full-stack care coordination: **Vite + React** web app, **Express + Socket.io** realtime API, **Supabase** (Auth + optional Postgres snapshot), and an optional **Android** provider app. Marketing landings and authenticated `/app` routes serve families, partners (providers), and hub admins.
+
+---
+
+## Project structure
+
+```
+Family_Hubs/
+├── index.html                 # Vite HTML shell
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+├── wrangler.jsonc             # Cloudflare Worker: static `dist/` + proxy `/api/*` → API origin
+├── worker/
+│   └── index.js               # Worker: forwards /api to Render; ASSETS for SPA
+├── Dockerfile                 # Optional single-container (API can serve `dist` if built)
+│
+├── src/                       # React (Vite) frontend
+│   ├── main.tsx               # Router: /, /providers, /hubs, /app/*
+│   ├── App.tsx                # Role-based shell: family UI, ProviderApp, AdminDashboard
+│   ├── types.ts
+│   ├── index.css
+│   ├── constants.ts
+│   ├── data/
+│   │   └── initialState.ts   # Dev seed reference (server store is source of truth when API runs)
+│   ├── lib/
+│   │   └── supabaseClient.ts
+│   ├── context/
+│   │   ├── AuthContext.tsx   # Supabase session + sign-in/out
+│   │   ├── AppContext.tsx   # Tasks, hubs, parents, notes, wallet, chat — REST + socket
+│   │   └── SocketContext.tsx # socket.io-client + JWT
+│   ├── pages/
+│   │   ├── FamilyLanding.tsx
+│   │   ├── ProviderLanding.tsx
+│   │   └── HubAdminLanding.tsx
+│   └── components/
+│       ├── admin/            # e.g. IdentityGuardModal
+│       ├── marketing/         # MarketingNav
+│       ├── provider/         # ProviderApp (field-ops)
+│       ├── support/          # SupportChatWidget (FAQ + live chat)
+│       └── ui/               # LiveSignalToaster, etc.
+│
+├── server/                    # Node API + Socket.io (TypeScript, run via `tsx`)
+│   ├── index.ts              # Express, CORS, `/api`, `/health`, optional static `dist`
+│   ├── demoConfig.ts         # Demo email/password constants (not in SQL)
+│   ├── demoProvision.ts     # On startup: Supabase Auth + in-memory parent/provider/wallet
+│   ├── socket.ts             # All realtime handlers (tasks, SOS, chat, …)
+│   ├── socketAuth.ts         # Supabase JWT on socket handshake
+│   ├── store.ts              # In-memory state (tasks, hubs, parents, providers, notes, wallets, chat)
+│   ├── persistence.ts       # Optional hydrate/persist to Supabase `fh_app_state`
+│   ├── realtimeHelpers.ts   # Auth helpers for socket handlers
+│   ├── realtimeHelpers.test.ts
+│   └── routes/
+│       ├── api.ts            # Public/sanitized REST, wallet rules
+│       ├── admin.ts         # Admin-only (manifest, parents, wallet audit)
+│       ├── providers.ts     # Provider list, apply, …
+│       ├── payments.ts      # Escrow stubs (Razorpay/Stripe later)
+│       └── comms.ts
+│
+├── supabase/
+│   └── migrations/
+│       └── 20260426120000_fh_app_state.sql   # `fh_app_state` + identity table if used
+│
+├── android/
+│   └── provider/              # Native Kotlin + Compose provider app
+│       ├── README.md
+│       └── app/src/main/java/in/familyhubs/provider/…
+│
+├── scripts/                   # TS CLI smoke / maintenance (run with `npx tsx`)
+│   ├── seed-demo-accounts.ts
+│   ├── reset-state.ts
+│   ├── smoke-full-audit.ts
+│   ├── smoke-deep-audit.ts
+│   ├── smoke-chat.ts
+│   ├── smoke-security.ts
+│   ├── smoke-provider-apply.ts
+│   └── …
+│
+└── docs/
+    ├── realtime-contract.md
+    ├── VERIFICATION_CHECKLIST.md
+    └── FCM.md
+```
+
+---
+
+## Architecture (high level)
+
+| Layer | Technology |
+|--------|------------|
+| **Browser UI** | React 19, Vite, Tailwind, React Router, Socket.io client, Supabase JS |
+| **Realtime + REST** | Express, Socket.io, in-memory store + optional Supabase snapshot |
+| **Auth** | Supabase Auth; roles in `app_metadata` (server-trusted) |
+| **DB (optional)** | Supabase Postgres — `fh_app_state` JSON snapshot for durability |
+| **Production static** | Often **Cloudflare Worker** + `dist/`; API on **Render** (or any Node host) |
+| **Mobile** | Android provider app talks to same API + Supabase Auth |
+
+---
 
 ## Quick start (development)
 
-1. `npm install`
-2. Copy `.env.example` to `.env` and set `VITE_SUPABASE_*` and, for server persistence, `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (see below).
-3. In Supabase **SQL Editor**, run the migration in `supabase/migrations/` so `fh_app_state` and `fh_identity_verifications` exist.
+1. **`npm install`**
+2. Copy **`.env.example`** → **`.env`** and set at least:
+   - **`VITE_SUPABASE_URL`**, **`VITE_SUPABASE_ANON_KEY`** (browser)
+   - Optional persistence: **`SUPABASE_URL`**, **`SUPABASE_SERVICE_ROLE_KEY`**
+3. In Supabase **SQL Editor**, run **`supabase/migrations/`** so `fh_app_state` (and related) exist.
 4. Start the stack:
-   - **One terminal:** `npm run dev:all` — Vite (**:3000**) + API/Socket (**:3001**), or
-   - **Two terminals:** `npm run dev` and `npm run server:dev`
+   - **`npm run dev:all`** — Vite **:3000** + API **:3001**, or
+   - Two terminals: **`npm run dev`** and **`npm run server:dev`**
 
-On startup, if Supabase env vars are set, the server **hydrates** from `fh_app_state` and then **syncs** the in-memory snapshot back to that table (creates the `main` row on first run).
+Vite dev server proxies `/api` and socket traffic to the API; see `vite.config.ts`.
 
-Without the API process, the UI still loads but **tasks/hubs** stay empty until `GET /api/state` and socket `state:sync` can run.
+---
 
-## Layout
+## Scripts (package.json)
 
-| Path | Role |
-|------|------|
-| [server/index.ts](server/index.ts) | Express, rate limiting, `/api`, `/health`, production static `dist` |
-| [server/socket.ts](server/socket.ts) | Socket.io handlers (source of truth for tasks/hubs in memory) |
-| [server/store.ts](server/store.ts) | Shared in-memory state seeded from [src/data/initialState.ts](src/data/initialState.ts) |
-| [server/persistence.ts](server/persistence.ts) | Optional Supabase snapshot (`fh_app_state` table) |
-| [src/context/AppContext.tsx](src/context/AppContext.tsx) | UI state; hydrates from `/api/state` + `state:sync` |
-| [src/context/SocketContext.tsx](src/context/SocketContext.tsx) | Socket client; passes Supabase JWT when configured |
-| [src/components/provider/ProviderApp.tsx](src/components/provider/ProviderApp.tsx) | Field-ops UI; tasks from global context (provider filter) |
-| [android/provider](android/provider/README.md) | **Native Android** provider app (Kotlin + Compose + Socket.io) |
-| [docs/realtime-contract.md](docs/realtime-contract.md) | Real-time event contract (web + server + Android) |
+| Command | Purpose |
+|--------|---------|
+| `npm run dev` | Vite dev server |
+| `npm run server:dev` | API + Socket.io with watch |
+| `npm run dev:all` | Both |
+| `npm run build` | Production build → `dist/` |
+| `npm start` | Run `server/index.ts` (set `NODE_ENV=production` if serving `dist` from same process) |
+| `npm run lint` | `tsc --noEmit` |
+| `npm run test:server` | `server/realtimeHelpers.test.ts` |
 
-## Android provider app
-
-The service provider can use a **native app** in `android/provider/` (see [android/provider/README.md](android/provider/README.md)). It uses the same `join:room` + `state:sync` flow as the web client. For development, point `socketUrl` in `local.properties` at the machine running the API (`10.0.2.2` = host from the Android emulator). Use `ALLOWED_ORIGINS` in `.env` if you load the **web** UI from a phone on your LAN.
-
-## Socket event names (server)
-
-Client `socket.on` / `socket.emit` pairs used in this repo include:
-
-- `join:room` — server responds with `state:sync` (`tasks`, `hubs`)
-- `task:update` / `task:updated` / `task:create` / `task:created`
-- `sos:trigger` / `sos:broadcast` / `sos:acknowledge` / `sos:acknowledged`
-- `identity:verified` / `identity:confirmed`
-- `notification:push`
+---
 
 ## Environment
 
-See [.env.example](.env.example). Notable:
+See **`.env.example`**. Common variables:
 
-- `VITE_SOCKET_URL` — socket server URL (production: your API host)
-- `CLIENT_URL` — allowed CORS origin for the browser app
-- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — enable DB snapshot for tasks/hubs (see `supabase/migrations/`)
-- `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` — optional browser auth
-- `STRICT_SOCKET_AUTH=1` — reject socket connections with invalid JWT when Supabase is enabled
+- **`VITE_SOCKET_URL`** — Socket/API origin in production builds (e.g. `https://your-api.onrender.com`)
+- **`CLIENT_URL`** / **`ALLOWED_ORIGINS`** — CORS for the web app
+- **`SUPABASE_*`** / **`VITE_SUPABASE_*`** — Auth and optional DB snapshot
+- **`STRICT_SOCKET_AUTH=1`** — Reject anonymous sockets when Supabase is configured
+- **`DEMO_AUTO_PROVISION`** — `0` to disable. Default: on when `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set.
+- **`DEMO_PROVISION_HUB_ADMIN`** — `1` to create/update `admin.demo@` (hub console + smoke tests). In **production** the default is **off** (only **family** + **provider** demos are provisioned). Set to `1` on the API host if you need the admin demo there.
 
-## Production
+### Demo accounts (not SQL)
 
-- `npm run build` then `NODE_ENV=production npm start` serves `dist` from the same Node process.
-- Or host static `dist` on a CDN and run only the API + Socket process; set `VITE_SOCKET_URL` to the API origin at build time.
+There are **no** demo users in SQL migrations. With a service role key, the **API process** creates/updates:
 
-[Dockerfile](Dockerfile) is provided for a single-container layout.
+- **Family:** `family.demo@familyhubs.in` (child)
+- **Provider:** `provider.demo@familyhubs.in`
 
-## Tests
+**Hub admin** (`admin.demo@familyhubs.in`) is only created when `DEMO_PROVISION_HUB_ADMIN=1` or when `NODE_ENV !== 'production'`. Passwords and names live in **`server/demoConfig.ts`**.
 
-- `npm run test:server` — provider task mutation rules ([server/realtimeHelpers.test.ts](server/realtimeHelpers.test.ts))
+In-memory data (parent profile, provider row, opening wallet) is idempotently applied in **`server/demoProvision.ts`** after the DB snapshot loads.
 
-## More documentation
+Optional CLI to refresh **Auth** only: `npx tsx scripts/seed-demo-accounts.ts` (restart the API to rely on the same in-memory rules, or let persistence rehydrate).
 
-- [docs/VERIFICATION_CHECKLIST.md](docs/VERIFICATION_CHECKLIST.md) — three-client manual checks
-- [docs/FCM.md](docs/FCM.md) — optional background push
-- [PROJECT_REPORT.md](PROJECT_REPORT.md) — status, roadmap, and gap analysis
+---
+
+## Quality checks (smoke tests)
+
+With `.env` populated and a running **or** production API, point **`VITE_API_URL`** and **`VITE_SOCKET_URL`** at the API (e.g. `https://family-hubs.onrender.com`):
+
+- `npx tsx scripts/smoke-full-audit.ts`
+- `npx tsx scripts/smoke-deep-audit.ts`
+- `npx tsx scripts/smoke-chat.ts`
+- `npx tsx scripts/smoke-security.ts`
+- `npx tsx scripts/smoke-provider-apply.ts` (may hit email/IP rate limits)
+
+`scripts/seed-demo-accounts.ts` — optional; syncs the same Supabase Auth users as the server (service role). Prefer relying on **API startup** `demoProvision` instead.
+
+---
+
+## Production (typical)
+
+- **Frontend:** `npm run build` → deploy **`dist/`**; many setups use **Cloudflare** (`wrangler.jsonc` + `worker/`) to serve assets and **proxy `/api/*`** to the API host.
+- **Backend:** **`npm start`** (or **Dockerfile**) on a host with WebSocket support (e.g. **Render**).
+- **Payments:** Stubs in `server/routes/payments.ts`; no live payment gateway in tree.
+
+---
+
+## Documentation
+
+- **`docs/realtime-contract.md`** — Socket/REST contract
+- **`docs/VERIFICATION_CHECKLIST.md`** — Manual multi-client checks
+- **`android/provider/README.md`** — Android provider app
+- **`PROJECT_REPORT.md`** — Project notes / roadmap (if present)
+
+---
+
+## License / status
+
+Private project; **1.0.0-alpha** in `package.json`.
