@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "familyhubs",
+  "main": "worker/index.js",
+  "compatibility_date": "2025-04-26",
+  // Vite builds the React frontend into ./dist — Cloudflare serves these as static assets.
+  // not_found_handling: "single-page-application" makes /any/deep/route fall back to
+  // index.html so React Router can take over (instead of returning 404).
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
