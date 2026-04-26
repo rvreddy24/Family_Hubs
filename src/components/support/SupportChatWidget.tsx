@@ -7,6 +7,9 @@
  * - Provider mode: direct live chat (no FAQ gate) — partners get instant
  *   access to a hub admin for dispatch / payout / verification questions.
  *
+ * End chat: double-tap to confirm; disabled while the socket is offline. Resolved
+ * threads reopen automatically when the same user opens help again (`chat:open`).
+ *
  * Mounts once at the app root and renders nothing for unauthenticated users
  * or for admins (admins use the in-dashboard `SupportConsole`).
  */
@@ -22,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { useSocket } from '../../context/SocketContext';
 import type { ChatKind, ChatMessage, ChatThread } from '../../types';
 
 interface FaqItem {
@@ -164,11 +168,18 @@ function ChatThreadView({
   messages,
   onSend,
   onBack,
+  onEndChatPress,
+  endChatArmed,
+  socketConnected,
 }: {
   thread: ChatThread | undefined;
   messages: ChatMessage[];
   onSend: (body: string) => void;
   onBack?: () => void;
+  /** First tap arms confirmation; second tap ends the thread (see `endChatArmed`). */
+  onEndChatPress?: () => void;
+  endChatArmed?: boolean;
+  socketConnected: boolean;
 }) {
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -203,6 +214,11 @@ function ChatThreadView({
         onClose={() => onBack && onBack()}
         onBack={onBack}
       />
+      {!socketConnected && (
+        <div className="px-4 py-1.5 bg-amber-50 text-[10px] font-bold text-amber-900 text-center border-b border-amber-100">
+          You’re offline — messages will send when you reconnect.
+        </div>
+      )}
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 py-3 bg-white"
@@ -241,18 +257,32 @@ function ChatThreadView({
               }
             }}
             placeholder="Type your message…"
-            disabled={!thread}
+            disabled={!thread || !socketConnected || thread?.status === 'resolved'}
             className="flex-1 bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-primary focus:bg-white disabled:opacity-50"
           />
           <button
             onClick={submit}
-            disabled={!thread || !draft.trim()}
+            disabled={!thread || !socketConnected || !draft.trim() || thread?.status === 'resolved'}
             className="w-9 h-9 grid place-items-center rounded-full bg-primary text-white hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             aria-label="Send"
           >
             <Send className="w-4 h-4" />
           </button>
         </div>
+        {onEndChatPress && thread && thread.status !== 'resolved' && (
+          <button
+            type="button"
+            onClick={onEndChatPress}
+            disabled={!socketConnected}
+            title={!socketConnected ? 'Reconnect to end this chat' : undefined}
+            aria-label={endChatArmed ? 'Confirm end support chat' : 'End support chat'}
+            className={`w-full mt-2 py-1.5 text-[11px] font-bold uppercase tracking-widest transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              endChatArmed ? 'text-amber-700 hover:text-amber-900' : 'text-gray-400 hover:text-red-600'
+            }`}
+          >
+            {endChatArmed ? 'Tap again to end chat' : 'End chat'}
+          </button>
+        )}
       </div>
     </>
   );
@@ -353,6 +383,7 @@ function ProviderQuickPrompts({ onPick }: { onPick: (text: string) => void }) {
 }
 
 export default function SupportChatWidget() {
+  const { isConnected } = useSocket();
   const {
     user,
     session,
@@ -361,12 +392,14 @@ export default function SupportChatWidget() {
     openChat,
     sendChatMessage,
     markChatRead,
+    resolveChatThread,
   } = useApp();
 
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'faq' | 'chat'>('faq');
   const [selectedFaq, setSelectedFaq] = useState<FaqItem | null>(null);
   const [pendingEscalation, setPendingEscalation] = useState<FaqItem | null>(null);
+  const [endChatArmed, setEndChatArmed] = useState(false);
 
   const isAuthed = Boolean(session?.id);
   const role = user?.role || 'child';
@@ -389,6 +422,16 @@ export default function SupportChatWidget() {
   useEffect(() => {
     if (open && widgetKind === 'provider') setView('chat');
   }, [open, widgetKind]);
+
+  useEffect(() => {
+    if (!open || view !== 'chat') setEndChatArmed(false);
+  }, [open, view]);
+
+  useEffect(() => {
+    if (!endChatArmed) return;
+    const id = window.setTimeout(() => setEndChatArmed(false), 4500);
+    return () => clearTimeout(id);
+  }, [endChatArmed]);
 
   // Open / refresh thread when entering chat view.
   useEffect(() => {
@@ -426,6 +469,22 @@ export default function SupportChatWidget() {
   const onSend = (body: string) => {
     if (!myThread) return;
     sendChatMessage(myThread.id, body, 'text');
+  };
+
+  const handleEndChatPress = () => {
+    if (!myThread || !isConnected) return;
+    if (!endChatArmed) {
+      setEndChatArmed(true);
+      return;
+    }
+    setEndChatArmed(false);
+    resolveChatThread(myThread.id);
+    if (widgetKind === 'family') {
+      setSelectedFaq(null);
+      setView('faq');
+    } else {
+      setOpen(false);
+    }
   };
 
   return (
@@ -489,6 +548,9 @@ export default function SupportChatWidget() {
                   thread={myThread}
                   messages={messagesForThread}
                   onSend={onSend}
+                  socketConnected={isConnected}
+                  endChatArmed={endChatArmed}
+                  onEndChatPress={handleEndChatPress}
                   onBack={
                     widgetKind === 'family'
                       ? () => {

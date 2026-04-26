@@ -55,3 +55,30 @@ Broadcasts are sent to the **`hub:<hubId>`** room when `hubId` is known; otherwi
 ## Android note
 
 The provider app under `android/provider` mirrors `join:room` and listens for the same `state:sync` / `task:updated` events. Reconnect triggers `connect` then re-`join:room` (same as web) to get a fresh `state:sync`.
+
+## Support chat (inbox + floating widget)
+
+Implemented in [`server/socket.ts`](../server/socket.ts) and the web app (`SupportChatWidget`, admin `SupportConsole`). Threads are **hub-scoped**; family and provider each have at most one thread per hub per `kind` (`family` | `provider`).
+
+### Client → server
+
+| Event | Payload | Notes |
+|-------|---------|--------|
+| `chat:open` | `{ kind, hubId?, userId?, userName?, userEmail? }` | Creates or returns the user’s thread; joins the socket to `chat:thread:<id>`. If the thread was **`resolved`**, the same member opening again sets status back to **`open`**. |
+| `chat:join` | `{ threadId }` | Hub admin or thread owner may join the thread room. |
+| `chat:message` | `{ threadId, body, kind?: 'text' \| 'faq' \| 'system', authorName? }` | Owner or admin. |
+| `chat:read` | `{ threadId, role?: 'admin' \| 'user' }` | Clears unread counters. |
+| `chat:typing` | `{ threadId, isTyping, authorRole? }` | Ephemeral typing signal. |
+| `chat:resolve` | `{ threadId }` | **Hub admin** or **thread owner** (JWT `sub` = `thread.userId`) when Supabase is enabled. Marks **`resolved`**, clears admin/user unreads, appends a system line (wording differs for admin vs member). |
+| `chat:reopen` | `{ threadId }` | **Hub admin only** (with Supabase enabled). Sets status **`open`** and appends a system line. |
+
+### Server → clients
+
+| Event | Payload |
+|-------|---------|
+| `chat:list` | `{ threads }` — filtered list for the caller |
+| `chat:thread:upserted` | `ChatThread` |
+| `chat:history` | `{ threadId, messages }` |
+| `chat:message` | `ChatMessage` |
+
+Rooms: `chat:inbox:<hubId>` (admins), `chat:thread:<threadId>`, `user:<userId>` for thread upserts.

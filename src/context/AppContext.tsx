@@ -139,6 +139,8 @@ interface AppContextValue {
   sendChatMessage: (threadId: string, body: string, kind?: 'text' | 'faq' | 'system') => void;
   markChatRead: (threadId: string) => void;
   resolveChatThread: (threadId: string) => void;
+  /** Hub admin only — sets thread back to open after resolve. */
+  reopenChatThread: (threadId: string) => void;
 
   // Static seeds
   resources: typeof MOCK_RESOURCES;
@@ -705,10 +707,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const resolveChatThread = useCallback(
     (threadId: string) => {
       if (!socket || !isConnected || !threadId) return;
-      if (user.role !== 'admin') return;
+      // Hub admins and support use this to close tickets; family/provider use the same
+      // event to end their own thread — the server checks the JWT vs thread owner.
       socket.emit('chat:resolve', { threadId });
     },
-    [socket, isConnected, user.role]
+    [socket, isConnected]
+  );
+
+  const reopenChatThread = useCallback(
+    (threadId: string) => {
+      if (!socket || !isConnected || !threadId) return;
+      socket.emit('chat:reopen', { threadId });
+    },
+    [socket, isConnected]
   );
 
   // --- Auth (real Supabase if configured, else demo persona-switch) ---
@@ -859,6 +870,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         sendChatMessage,
         markChatRead,
         resolveChatThread,
+        reopenChatThread,
         resources: MOCK_RESOURCES,
         services: SERVICES,
         logs: [],

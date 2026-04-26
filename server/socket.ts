@@ -47,6 +47,7 @@ import {
   hubBroadcast,
   isAdmin,
   isStrictAuth,
+  isSupabaseEnabled,
   primaryHubIdFromSocket,
   rejectIfNotAdmin,
   rejectIfUnauthenticated,
@@ -544,6 +545,15 @@ export function setupSocketHandlers(io: SocketIOServer) {
           afterMutation();
         }
 
+        // Let the same member start fresh after they ended a chat (status was resolved).
+        if (thread.status === 'resolved') {
+          const openerId = u?.id || userId;
+          if (openerId === thread.userId) {
+            thread = patchChatThread(thread.id, { status: 'open' })!;
+            afterMutation();
+          }
+        }
+
         socket.join(`chat:thread:${thread.id}`);
         broadcastThreadUpsert(thread);
 
@@ -694,10 +704,64 @@ export function setupSocketHandlers(io: SocketIOServer) {
     socket.on(
       'chat:resolve',
       (data: { threadId: string }) => {
-        if (rejectIfNotAdmin(socket, 'chat:resolve')) return;
+        const u = getSocketUser(socket);
         const thread = getChatThreadById(data?.threadId);
         if (!thread) return;
-        const updated = patchChatThread(thread.id, { status: 'resolved' })!;
+
+        const adminCaller = Boolean(u && isAdmin(u));
+        const ownerCaller = Boolean(u && u.id === thread.userId);
+
+        if (isSupabaseEnabled()) {
+          if (!adminCaller && !ownerCaller) {
+            console.warn('[Socket] chat:resolve rejected: must be hub admin or thread owner');
+            return;
+          }
+        } else if (u && !adminCaller && !ownerCaller) {
+          console.warn('[Socket] chat:resolve rejected (demo with auth): user/thread mismatch');
+          return;
+        }
+
+        const updated = patchChatThread(thread.id, {
+          status: 'resolved',
+          unreadForAdmin: 0,
+          unreadForUser: 0,
+        })!;
+        afterMutation();
+        broadcastThreadUpsert(updated);
+        const sysBody = adminCaller
+          ? 'Conversation marked as resolved by support.'
+          : 'You ended this chat. Open help anytime if you need us again.';
+        const sysMsg: ChatMessage = {
+          id: makeId('msg'),
+          threadId: thread.id,
+          authorId: 'system',
+          authorRole: 'bot',
+          authorName: 'System',
+          body: sysBody,
+          createdAt: new Date().toISOString(),
+          kind: 'system',
+        };
+        appendChatMessage(sysMsg);
+        broadcastChatMessage(updated, sysMsg);
+      }
+    );
+
+    socket.on(
+      'chat:reopen',
+      (data: { threadId: string }) => {
+        const u = getSocketUser(socket);
+        const thread = getChatThreadById(data?.threadId);
+        if (!thread) return;
+        if (isSupabaseEnabled()) {
+          if (!u || !isAdmin(u)) {
+            console.warn('[Socket] chat:reopen rejected: hub admin required');
+            return;
+          }
+        } else if (u && !isAdmin(u)) {
+          console.warn('[Socket] chat:reopen rejected (demo with auth): not admin');
+          return;
+        }
+        const updated = patchChatThread(thread.id, { status: 'open' })!;
         afterMutation();
         broadcastThreadUpsert(updated);
         const sysMsg: ChatMessage = {
@@ -706,7 +770,7 @@ export function setupSocketHandlers(io: SocketIOServer) {
           authorId: 'system',
           authorRole: 'bot',
           authorName: 'System',
-          body: 'Conversation marked as resolved by support.',
+          body: 'Conversation reopened by support.',
           createdAt: new Date().toISOString(),
           kind: 'system',
         };

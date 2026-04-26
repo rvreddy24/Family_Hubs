@@ -150,6 +150,13 @@ In-memory data (parent profile, provider row, opening wallet) is idempotently ap
 
 Optional CLI to refresh **Auth** only: `npx tsx scripts/seed-demo-accounts.ts` (restart the API to rely on the same in-memory rules, or let persistence rehydrate).
 
+### Support chat (family / provider / admin)
+
+- **Family & provider** (floating widget): **End chat** ends the thread (double-tap to confirm). Opening help again **reopens** the same thread for a new conversation when it was resolved.
+- **Hub admin** (Support tab): **Mark resolved** closes the ticket; **Reopen thread** sets it back to open so you can reply again.
+
+Socket details: `docs/realtime-contract.md` (support chat section).
+
 ---
 
 ## Quality checks (smoke tests)

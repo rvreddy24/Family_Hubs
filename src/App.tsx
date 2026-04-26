@@ -749,6 +749,7 @@ const SupportSidebarItem = ({
 
 // --- Admin Support Console (live inbox + reply pane) ----------------------
 const SupportConsole = ({ hubId }: { hubId: string }) => {
+  const { isConnected } = useSocket();
   const {
     chatThreads,
     chatMessages,
@@ -756,6 +757,7 @@ const SupportConsole = ({ hubId }: { hubId: string }) => {
     sendChatMessage,
     markChatRead,
     resolveChatThread,
+    reopenChatThread,
   } = useApp();
 
   const hubThreads = chatThreads.filter(t => !hubId || t.hubId === hubId);
@@ -907,14 +909,27 @@ const SupportConsole = ({ hubId }: { hubId: string }) => {
                     )}
                   </div>
                 </div>
-                {activeThread.status !== 'resolved' && (
-                  <button
-                    onClick={() => resolveChatThread(activeThread.id)}
-                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-gray-200 text-gray-600 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-colors"
-                  >
-                    Mark resolved
-                  </button>
-                )}
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {activeThread.status === 'resolved' ? (
+                    <button
+                      type="button"
+                      onClick={() => reopenChatThread(activeThread.id)}
+                      disabled={!isConnected}
+                      className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-gray-200 text-gray-600 hover:bg-primary/5 hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-40"
+                    >
+                      Reopen thread
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => resolveChatThread(activeThread.id)}
+                      disabled={!isConnected}
+                      className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-gray-200 text-gray-600 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-colors disabled:opacity-40"
+                    >
+                      Mark resolved
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 bg-gray-50/40">
@@ -961,6 +976,16 @@ const SupportConsole = ({ hubId }: { hubId: string }) => {
               </div>
 
               <div className="px-4 py-3 border-t border-gray-100 bg-white">
+                {!isConnected && (
+                  <p className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 mb-2">
+                    Offline — reconnect to send or change thread status.
+                  </p>
+                )}
+                {activeThread.status === 'resolved' && isConnected && (
+                  <p className="text-[10px] font-bold text-gray-500 mb-2">
+                    This thread is resolved. Reopen it above to send another message.
+                  </p>
+                )}
                 <div className="flex items-center gap-2">
                   <textarea
                     value={draft}
@@ -971,13 +996,20 @@ const SupportConsole = ({ hubId }: { hubId: string }) => {
                         submit();
                       }
                     }}
-                    placeholder="Reply to the customer…"
+                    placeholder={
+                      activeThread.status === 'resolved'
+                        ? 'Reopen the thread to reply…'
+                        : 'Reply to the customer…'
+                    }
                     rows={1}
-                    className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent focus:bg-white resize-none max-h-32"
+                    disabled={activeThread.status === 'resolved' || !isConnected}
+                    className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent focus:bg-white resize-none max-h-32 disabled:opacity-50"
                   />
                   <button
                     onClick={submit}
-                    disabled={!draft.trim()}
+                    disabled={
+                      !draft.trim() || activeThread.status === 'resolved' || !isConnected
+                    }
                     className="w-10 h-10 grid place-items-center rounded-xl bg-accent text-white hover:bg-blue-700 disabled:bg-gray-200 disabled:cursor-not-allowed transition-colors"
                     aria-label="Send"
                   >
