@@ -1,0 +1,5 @@
+# Cloudflare Pages: proxy backend API to Render.
+# This lets the frontend keep using relative URLs like fetch('/api/state').
+# Format: <from>  <to>  <status>   (200 = silent rewrite/proxy)
+
+/api/*  https://family-hubs.onrender.com/api/:splat  200
