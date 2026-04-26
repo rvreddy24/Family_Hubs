@@ -37,6 +37,19 @@ export const MOCK_ADMIN = {
   hubId: 'hub_mgl'
 };
 
+export const MOCK_PROVIDER_USER = {
+  id: 'prov_1',
+  name: 'Venu Gopal',
+  email: 'venu@example.com',
+  location: 'Miryalaguda, India',
+  phoneNumber: '+91 98480 11223',
+  profileImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Venu',
+  walletBalance: 0,
+  escrowBalance: 0,
+  role: 'provider' as const,
+  hubId: 'hub_mgl'
+};
+
 export const MOCK_PROVIDERS = [
   {
     id: 'prov_1',

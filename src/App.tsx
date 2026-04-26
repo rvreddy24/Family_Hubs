@@ -3,7 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import IdentityGuardModal from './components/admin/IdentityGuardModal';
+import ProviderApp from './components/provider/ProviderApp';
+import { ConnectionIndicator } from './components/ui/LiveSignalToaster';
+import { useSocket } from './context/SocketContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Activity,
@@ -58,12 +62,12 @@ import {
   AreaChart,
   Area
 } from 'recharts';
-import { MOCK_USER, MOCK_ADMIN, MOCK_PARENTS, MOCK_TASKS, MOCK_LOGS, MOCK_RESOURCES, MOCK_TRANSACTIONS, SERVICES, MOCK_PROVIDERS, MOCK_HUBS } from './constants';
+import { MOCK_USER, MOCK_ADMIN, MOCK_PROVIDER_USER, MOCK_PARENTS, MOCK_TASKS, MOCK_LOGS, MOCK_RESOURCES, MOCK_TRANSACTIONS, SERVICES, MOCK_PROVIDERS, MOCK_HUBS } from './constants';
 import { ServiceCategory, User as UserType } from './types';
 
 // --- Components ---
 
-type AppView = 'landing' | 'dashboard' | 'booking' | 'wallet' | 'resources' | 'add-parent' | 'edit-parent' | 'profile' | 'services' | 'admin-dashboard';
+type AppView = 'landing' | 'dashboard' | 'booking' | 'wallet' | 'resources' | 'add-parent' | 'edit-parent' | 'profile' | 'services' | 'admin-dashboard' | 'provider-dashboard';
 type AuthMode = 'login' | 'signup';
 
 const Navbar = ({ onViewChange, currentView, user, onLogout, onSOS }: { onViewChange: (v: AppView) => void; currentView: AppView, user: any, onLogout: () => void, onSOS: () => void }) => {
@@ -268,13 +272,39 @@ const ServiceCard = ({ icon: Icon, title, description, active = false }: { icon:
 const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { hubId: string, tasks: any[], setTasks: React.Dispatch<React.SetStateAction<any[]>>, hubs: any[], setHubs: React.Dispatch<React.SetStateAction<any[]>>, onLogout?: () => void }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'users' | 'jobs' | 'finances' | 'alerts'>('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { socket } = useSocket();
   const providers = MOCK_PROVIDERS;
   const currentHub = hubs.find(h => h.id === hubId) || hubs[0];
   const pendingVerifications = providers.filter(p => !p.verified);
   const activeTasks = tasks.filter(t => t.status !== 'settled');
 
+  // Identity Guard state
+  const [identityGuardOpen, setIdentityGuardOpen] = useState(false);
+  const [pendingDispatch, setPendingDispatch] = useState<{ taskId: string; provider: any } | null>(null);
+
   const handleUpdateStatus = (taskId: string, status: string) => {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t));
+    // Broadcast via Socket.io
+    if (socket) {
+      socket.emit('task:update', { taskId, status, updatedBy: 'Hub Admin' });
+    }
+  };
+
+  // Identity Guard: Intercept dispatch to require verification
+  const handleDispatchWithGuard = (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    const provider = task?.careManager
+      ? providers.find(p => p.name === task.careManager?.name) || providers[0]
+      : providers[0];
+    setPendingDispatch({ taskId, provider });
+    setIdentityGuardOpen(true);
+  };
+
+  const handleIdentityVerified = () => {
+    if (pendingDispatch) {
+      handleUpdateStatus(pendingDispatch.taskId, 'assigned');
+    }
+    setPendingDispatch(null);
   };
 
   const SidebarItem = ({ id, icon: Icon, label }: { id: any, icon: any, label: string }) => (
@@ -338,10 +368,7 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
 
         <div className="pt-6 border-t border-gray-100 mt-auto">
           <div className="bg-gray-50 p-4 rounded-2xl space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-[10px] font-black uppercase text-gray-500">System Nominal</span>
-            </div>
+            <ConnectionIndicator />
             <button onClick={onLogout} className="w-full py-2 bg-white border border-gray-200 rounded-lg text-[10px] font-black uppercase hover:bg-red-50 hover:text-red-600 transition-all">Sign Out</button>
           </div>
         </div>
@@ -454,7 +481,7 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                             <div className="flex gap-1.5 mt-1">
                               {task.status === 'pending' && (
                                 <button 
-                                  onClick={(e) => { e.stopPropagation(); handleUpdateStatus(task.id, 'assigned'); }}
+                                  onClick={(e) => { e.stopPropagation(); handleDispatchWithGuard(task.id); }}
                                   className="px-2 py-1 bg-accent text-white text-[8px] font-black uppercase rounded hover:bg-black transition-all"
                                 >
                                   Dispatch
@@ -701,6 +728,10 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                          <button 
                            onClick={() => {
                              setHubs(prev => prev.map(h => h.id === hubId ? { ...h, emergencyAlerts: 0 } : h));
+                             // Broadcast acknowledgment via Socket.io
+                             if (socket) {
+                               socket.emit('sos:acknowledge', { hubId, acknowledgedBy: 'Hub Admin' });
+                             }
                            }}
                            className="px-6 py-4 bg-white border border-red-100 text-red-600 font-black rounded-2xl uppercase tracking-widest text-xs"
                          >
@@ -776,6 +807,16 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
         </div>
       </main>
 
+      {/* Identity Guard Modal */}
+      {pendingDispatch && (
+        <IdentityGuardModal
+          isOpen={identityGuardOpen}
+          onClose={() => { setIdentityGuardOpen(false); setPendingDispatch(null); }}
+          provider={pendingDispatch.provider}
+          taskId={pendingDispatch.taskId}
+          onVerified={handleIdentityVerified}
+        />
+      )}
     </div>
   );
 };
@@ -794,11 +835,58 @@ export default function App() {
   const [hubs, setHubs] = useState(MOCK_HUBS);
   const [user, setUser] = useState<UserType>(MOCK_USER);
   const [isSOSActive, setIsSOSActive] = useState(false);
+  const { socket, isConnected } = useSocket();
+
+  // --- Socket.io: Listen for real-time events from other clients ---
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTaskUpdated = (data: { taskId: string; status: string }) => {
+      setTasks(prev => prev.map(t => (t.id === data.taskId ? { ...t, status: data.status } : t)));
+    };
+
+    const handleTaskCreated = (data: any) => {
+      setTasks(prev => {
+        if (prev.find(t => t.id === data.id)) return prev;
+        return [data, ...prev];
+      });
+    };
+
+    const handleSOSBroadcast = (data: any) => {
+      setHubs(prev => prev.map(h => h.id === data.hubId ? { ...h, emergencyAlerts: (h.emergencyAlerts || 0) + 1 } : h));
+    };
+
+    const handleSOSAcknowledged = (data: { hubId: string }) => {
+      setHubs(prev => prev.map(h => (h.id === data.hubId ? { ...h, emergencyAlerts: 0 } : h)));
+    };
+
+    socket.on('task:updated', handleTaskUpdated);
+    socket.on('task:created', handleTaskCreated);
+    socket.on('sos:broadcast', handleSOSBroadcast);
+    socket.on('sos:acknowledged', handleSOSAcknowledged);
+
+    return () => {
+      socket.off('task:updated', handleTaskUpdated);
+      socket.off('task:created', handleTaskCreated);
+      socket.off('sos:broadcast', handleSOSBroadcast);
+      socket.off('sos:acknowledged', handleSOSAcknowledged);
+    };
+  }, [socket]);
 
   const handleSOS = () => {
      setIsSOSActive(true);
+     const hubId = user.hubId || 'hub_mgl';
      // Update hubs state to reflect the alert
-     setHubs(prev => prev.map(h => h.id === (user.hubId || 'hub_mgl') ? { ...h, emergencyAlerts: h.emergencyAlerts + 1 } : h));
+     setHubs(prev => prev.map(h => h.id === hubId ? { ...h, emergencyAlerts: h.emergencyAlerts + 1 } : h));
+     // Broadcast SOS via Socket.io to all hub admins
+     if (socket && isConnected) {
+       socket.emit('sos:trigger', {
+         userId: user.id,
+         hubId,
+         parentName: parents[0]?.name || 'Parent',
+         location: 'Miryalaguda Sector 4',
+       });
+     }
   };
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -883,8 +971,8 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen bg-white ${view !== 'admin-dashboard' ? 'pt-20' : ''}`}>
-      {view !== 'admin-dashboard' && (
+    <div className={`min-h-screen bg-white ${view !== 'admin-dashboard' && view !== 'provider-dashboard' ? 'pt-20' : ''}`}>
+      {view !== 'admin-dashboard' && view !== 'provider-dashboard' && (
         <Navbar onViewChange={setView} currentView={view} user={user} onLogout={logout} onSOS={() => setShowSOS(true)} />
       )}
 
@@ -984,6 +1072,17 @@ export default function App() {
                     Hub Admin
                     <LayoutDashboard className="w-6 h-6 text-accent group-hover:rotate-12 transition-transform" />
                   </button>
+                  <button 
+                    onClick={() => {
+                      setUser(MOCK_PROVIDER_USER as any);
+                      setView('provider-dashboard');
+                      setSession({ id: 'prov_1' });
+                    }}
+                    className="px-10 py-6 bg-emerald-600 text-white rounded-[32px] font-black text-xl flex items-center justify-center gap-3 hover:bg-emerald-700 transition-all active:scale-95 group shadow-xl shadow-emerald-200"
+                  >
+                    Service Provider
+                    <Wrench className="w-6 h-6 group-hover:rotate-12 transition-transform" />
+                  </button>
                 </div>
               </div>
               <div className="flex-1 w-full max-w-lg relative order-1 md:order-2">
@@ -1053,6 +1152,17 @@ export default function App() {
               setHubs={setHubs}
               onLogout={logout} 
             />
+          </motion.div>
+        )}
+
+        {view === 'provider-dashboard' && user.role === 'provider' && (
+          <motion.div 
+            key="provider-dashboard"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full"
+          >
+            <ProviderApp onLogout={logout} />
           </motion.div>
         )}
 
