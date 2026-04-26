@@ -9,11 +9,17 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import { setupSocketHandlers } from './socket';
 import { apiRouter } from './routes/api';
 import { attachSocketAuth } from './socketAuth';
 import { hydrateFromDatabase, isPersistenceEnabled, persistState } from './persistence';
+
+// ESM-safe __dirname (this file runs as an ES module: package.json has "type": "module").
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
@@ -79,13 +85,21 @@ const io = new SocketIOServer(httpServer, {
 attachSocketAuth(io);
 setupSocketHandlers(io);
 
-// --- Static Serving (Production) ---
+// --- Static Serving (Production, optional) ---
+// On Render the backend is API-only (frontend lives on Cloudflare Pages),
+// so we only mount the static handler if a built `dist/` actually exists.
 if (IS_PRODUCTION) {
   const distPath = path.resolve(__dirname, '../dist');
-  app.use(express.static(distPath));
-  app.get('*', (_req, res) => {
-    return res.sendFile(path.join(distPath, 'index.html'));
-  });
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    app.use(express.static(distPath));
+    app.get('*', (_req, res) => {
+      return res.sendFile(indexPath);
+    });
+    console.log(`[Server] Serving static frontend from ${distPath}`);
+  } else {
+    console.log('[Server] No dist/ found — running as API-only (frontend served separately).');
+  }
 }
 
 // --- Start ---
