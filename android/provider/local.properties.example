@@ -1,0 +1,7 @@
+## Copy to `local.properties` (do not commit; Android Studio also creates this file)
+sdk.dir=C\:\\Users\\You\\AppData\\Local\\Android\\Sdk
+socketUrl=http\://10.0.2.2\:3001
+defaultHubId=hub_mgl
+# Same project as VITE_SUPABASE_* (project URL, not /rest/v1/ path)
+# supabaseUrl=https\://xxxxx.supabase.co
+# supabaseAnonKey=eyJ...

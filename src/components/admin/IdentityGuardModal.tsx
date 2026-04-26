@@ -4,7 +4,7 @@
  * Admin MUST verify provider identity (ID + Face capture) before dispatching.
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback, type ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ShieldCheck,
@@ -13,7 +13,6 @@ import {
   X,
   CheckCircle2,
   AlertCircle,
-  User,
   Fingerprint,
 } from 'lucide-react';
 import { useSocket } from '../../context/SocketContext';
@@ -46,24 +45,56 @@ export default function IdentityGuardModal({
   const [faceCapture, setFaceCapture] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  const handleIdUpload = () => {
-    // Simulate file selection
-    setIdUploaded(true);
-    setTimeout(() => setStep('face_capture'), 800);
+  const handleIdUploadEvent = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      setIdUploaded(true);
+      setTimeout(() => setStep('face_capture'), 600);
+    }
   };
 
-  const handleFaceCapture = () => {
-    // Simulate camera capture with a placeholder
-    setFaceCapture(provider.photo);
-    setIsVerifying(true);
+  const handleIdUploadDemo = () => {
+    setIdUploaded(true);
+    setTimeout(() => setStep('face_capture'), 400);
+  };
 
-    // Simulate AI verification delay
+  useEffect(() => {
+    if (step !== 'face_capture' || !isOpen) {
+      return;
+    }
+    let live: MediaStream | null = null;
+    (async () => {
+      try {
+        live = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' },
+          audio: false,
+        });
+        streamRef.current = live;
+        const v = videoRef.current;
+        if (v) {
+          v.srcObject = live;
+          void v.play();
+        }
+      } catch (err) {
+        console.warn('[IdentityGuard] Camera not available, fallback to static capture.', err);
+      }
+    })();
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [step, isOpen]);
+
+  const runVerification = useCallback(() => {
+    setIsVerifying(true);
     setTimeout(() => {
       setIsVerifying(false);
       setStep('confirmed');
-
-      // Emit identity verified event via Socket.io
       if (socket) {
         socket.emit('identity:verified', {
           providerId: provider.id,
@@ -71,7 +102,24 @@ export default function IdentityGuardModal({
           verifiedBy: 'Hub Admin',
         });
       }
-    }, 1500);
+    }, 1200);
+  }, [socket, provider.id, taskId]);
+
+  const handleFaceCapture = () => {
+    const v = videoRef.current;
+    if (v && v.videoWidth > 0) {
+      const canvas = document.createElement('canvas');
+      canvas.width = v.videoWidth;
+      canvas.height = v.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.drawImage(v, 0, 0);
+      setFaceCapture(canvas.toDataURL('image/jpeg', 0.88));
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    } else {
+      setFaceCapture(provider.photo);
+    }
+    runVerification();
   };
 
   const handleDispatch = () => {
@@ -213,7 +261,7 @@ export default function IdentityGuardModal({
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={handleIdUpload}
+                      onChange={handleIdUploadEvent}
                     />
 
                     {!idUploaded ? (
@@ -245,10 +293,10 @@ export default function IdentityGuardModal({
 
                     {/* Simulate upload for demo */}
                     <button
-                      onClick={handleIdUpload}
+                      onClick={handleIdUploadDemo}
                       className="w-full py-4 bg-accent text-white rounded-2xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-200"
                     >
-                      {idUploaded ? 'Processing...' : 'Scan ID (Demo)'}
+                      {idUploaded ? 'Processing...' : 'Skip to scan (Demo)'}
                     </button>
                   </motion.div>
                 )}
@@ -275,12 +323,18 @@ export default function IdentityGuardModal({
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center gap-4">
-                          <div className="w-24 h-24 border-4 border-dashed border-accent/30 rounded-full flex items-center justify-center">
-                            <User className="w-12 h-12 text-gray-300" />
-                          </div>
-                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                            Position Face Here
+                        <video
+                          ref={videoRef}
+                          className="w-full h-full object-cover scale-x-[-1]"
+                          autoPlay
+                          playsInline
+                          muted
+                        />
+                      )}
+                      {!faceCapture && (
+                        <div className="absolute bottom-2 left-0 right-0 flex justify-center pointer-events-none">
+                          <p className="text-[9px] font-bold text-white/90 uppercase tracking-widest bg-black/30 px-2 py-1 rounded">
+                            Live preview — grant camera permission
                           </p>
                         </div>
                       )}
@@ -297,12 +351,13 @@ export default function IdentityGuardModal({
                     </div>
 
                     <button
+                      type="button"
                       onClick={handleFaceCapture}
                       disabled={isVerifying}
                       className="w-full py-4 bg-accent text-white rounded-2xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-200 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <Camera className="w-5 h-5" />
-                      {isVerifying ? 'Verifying Match...' : 'Capture Face (Demo)'}
+                      {isVerifying ? 'Verifying Match...' : 'Capture face (camera)'}
                     </button>
                   </motion.div>
                 )}

@@ -3,10 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import IdentityGuardModal from './components/admin/IdentityGuardModal';
 import ProviderApp from './components/provider/ProviderApp';
 import { ConnectionIndicator } from './components/ui/LiveSignalToaster';
+import { Navigate } from 'react-router-dom';
+import { useApp, type AppView, type AuthMode } from './context/AppContext';
+import { useAuth } from './context/AuthContext';
 import { useSocket } from './context/SocketContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -23,7 +26,10 @@ import {
   ChevronRight,
   Clock,
   Edit2,
+  FileDown,
+  FileText,
   Heart,
+  HelpCircle,
   History,
   LayoutDashboard,
   Lock,
@@ -37,6 +43,7 @@ import {
   Plus,
   PlusCircle,
   Search,
+  Send,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -62,15 +69,30 @@ import {
   AreaChart,
   Area
 } from 'recharts';
-import { MOCK_USER, MOCK_ADMIN, MOCK_PROVIDER_USER, MOCK_PARENTS, MOCK_TASKS, MOCK_LOGS, MOCK_RESOURCES, MOCK_TRANSACTIONS, SERVICES, MOCK_PROVIDERS, MOCK_HUBS } from './constants';
+import { MOCK_USER, MOCK_ADMIN, MOCK_PROVIDER_USER } from './constants';
 import { ServiceCategory, User as UserType } from './types';
 
 // --- Components ---
 
-type AppView = 'landing' | 'dashboard' | 'booking' | 'wallet' | 'resources' | 'add-parent' | 'edit-parent' | 'profile' | 'services' | 'admin-dashboard' | 'provider-dashboard';
-type AuthMode = 'login' | 'signup';
-
-const Navbar = ({ onViewChange, currentView, user, onLogout, onSOS }: { onViewChange: (v: AppView) => void; currentView: AppView, user: any, onLogout: () => void, onSOS: () => void }) => {
+const Navbar = ({
+  onViewChange,
+  currentView,
+  user,
+  onLogout,
+  onSOS,
+  isAuthed,
+  onSignIn,
+  onSignUp,
+}: {
+  onViewChange: (v: AppView) => void;
+  currentView: AppView;
+  user: any;
+  onLogout: () => void;
+  onSOS: () => void;
+  isAuthed: boolean;
+  onSignIn: () => void;
+  onSignUp: () => void;
+}) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const handleNav = (v: AppView) => {
@@ -78,98 +100,167 @@ const Navbar = ({ onViewChange, currentView, user, onLogout, onSOS }: { onViewCh
     setIsMenuOpen(false);
   };
 
-  return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 md:px-8 py-3 flex items-center justify-between shadow-sm">
-      <div className="flex items-center gap-6">
-        <h1 
-          onClick={() => handleNav('landing')}
-          className="text-lg md:text-xl font-black tracking-tighter flex items-center gap-2 cursor-pointer transition-transform hover:scale-105"
-        >
-          <div className="w-7 h-7 bg-accent rounded-lg flex items-center justify-center text-white">
-            <Heart className="w-4 h-4 fill-current" />
-          </div>
-          <span className="hidden xs:inline">FamilyHubs</span>
-        </h1>
-        {currentView !== 'landing' && (
-          <div className="hidden md:flex items-center gap-6 border-l border-gray-100 pl-6">
-            <button onClick={() => handleNav('dashboard')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'dashboard' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Dashboard</button>
-            {user.role === 'admin' && (
-              <button onClick={() => handleNav('admin-dashboard')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'admin-dashboard' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Hub Admin</button>
-            )}
-            <button onClick={() => handleNav('services')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'services' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Services</button>
-            <button onClick={() => handleNav('resources')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'resources' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Library</button>
-            <button onClick={() => handleNav('wallet')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'wallet' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Wallet</button>
-          </div>
-        )}
+  const Logo = (
+    <button
+      type="button"
+      onClick={() => handleNav('landing')}
+      className="text-lg md:text-xl font-black tracking-tighter flex items-center gap-2 cursor-pointer transition-transform hover:scale-[1.02]"
+    >
+      <div className="w-7 h-7 bg-accent rounded-lg flex items-center justify-center text-white">
+        <Heart className="w-4 h-4 fill-current" />
       </div>
+      <span>FamilyHubs</span>
+    </button>
+  );
 
-      <div className="flex items-center gap-2 md:gap-4">
-        {currentView !== 'landing' && (
-          <div className="hidden sm:flex items-center gap-2 text-xs md:text-sm font-medium text-gray-500 bg-gray-50 px-3 py-1.5 rounded-full">
-            <MapPin className="w-4 h-4" />
-            Miryalaguda
-          </div>
-        )}
-        
-        <div className="flex items-center gap-2 border-l border-gray-100 pl-2 md:pl-4">
-          {user.role === 'child' && (
-            <button 
-              onClick={onSOS}
-              className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all animate-pulse shadow-lg shadow-red-100"
-              title="SEND EMERGENCY SOS"
-            >
-              <ShieldAlert className="w-5 h-5" />
-            </button>
-          )}
-          
-          <div 
+  // Public landing nav — guest visitor: clean, no SOS / profile / logout junk.
+  if (currentView === 'landing' && !isAuthed) {
+    return (
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 md:px-8 py-3 flex items-center justify-between shadow-sm">
+        {Logo}
+        <div className="flex items-center gap-2 md:gap-3">
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="px-3 md:px-4 py-2 text-[11px] md:text-xs font-black uppercase tracking-widest text-gray-500 hover:text-primary transition-colors"
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            onClick={onSignUp}
+            className="px-3 md:px-4 py-2 bg-primary text-white rounded-xl text-[11px] md:text-xs font-black uppercase tracking-widest hover:bg-accent transition-colors flex items-center gap-2"
+          >
+            Get started
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </nav>
+    );
+  }
+
+  // Landing nav for signed-in users — slim, no SOS (landing isn't an emergency context).
+  if (currentView === 'landing' && isAuthed) {
+    return (
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 md:px-8 py-3 flex items-center justify-between shadow-sm">
+        {Logo}
+        <div className="flex items-center gap-2 md:gap-3">
+          <button
+            type="button"
+            onClick={() => handleNav(user.role === 'admin' ? 'admin-dashboard' : 'dashboard')}
+            className="px-3 md:px-4 py-2 bg-primary text-white rounded-xl text-[11px] md:text-xs font-black uppercase tracking-widest hover:bg-accent transition-colors"
+          >
+            Open dashboard
+          </button>
+          <button
+            type="button"
             onClick={() => handleNav('profile')}
-            className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden cursor-pointer hover:ring-2 hover:ring-accent transition-all"
+            className="w-9 h-9 rounded-full bg-gray-100 overflow-hidden hover:ring-2 hover:ring-accent transition-all flex items-center justify-center"
+            title={user.name}
           >
             {user.profileImage ? (
               <img src={user.profileImage} alt={user.name} className="w-full h-full object-cover" />
             ) : (
-              <User className="w-4 h-4 text-gray-600" />
+              <User className="w-4 h-4 text-gray-500" />
             )}
-          </div>
-          <span 
-            onClick={() => handleNav('profile')}
-            className="text-sm font-semibold hidden md:inline cursor-pointer hover:text-accent transition-colors"
-          >
-            {user.name}
-          </span>
-          
-          <button 
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="p-2 hover:bg-gray-50 rounded-lg lg:hidden"
-          >
-            <Settings className="w-5 h-5 text-gray-600" />
           </button>
-          
-          <button 
+          <button
+            type="button"
             onClick={onLogout}
-            className="hidden lg:flex p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
-            title="Logout"
+            className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+            title="Sign out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+      </nav>
+    );
+  }
+
+  // In-app nav (dashboard / services / resources / wallet / profile)
+  return (
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 md:px-8 py-3 flex items-center justify-between shadow-sm">
+      <div className="flex items-center gap-6">
+        {Logo}
+        <div className="hidden md:flex items-center gap-6 border-l border-gray-100 pl-6">
+          <button onClick={() => handleNav('dashboard')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'dashboard' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Dashboard</button>
+          {user.role === 'admin' && (
+            <button onClick={() => handleNav('admin-dashboard')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'admin-dashboard' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Hub Admin</button>
+          )}
+          <button onClick={() => handleNav('services')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'services' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Services</button>
+          <button onClick={() => handleNav('resources')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'resources' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Library</button>
+          <button onClick={() => handleNav('wallet')} className={`text-xs font-black uppercase tracking-widest transition-colors ${currentView === 'wallet' ? 'text-accent' : 'text-gray-400 hover:text-primary'}`}>Wallet</button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 md:gap-4">
+        {(user as { location?: string }).location && (
+          <div className="hidden sm:flex items-center gap-2 text-xs md:text-sm font-medium text-gray-500 bg-gray-50 px-3 py-1.5 rounded-full">
+            <MapPin className="w-4 h-4" />
+            {(user as { location?: string }).location}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 border-l border-gray-100 pl-2 md:pl-4">
+          {user.role === 'child' && (
+            <button
+              onClick={onSOS}
+              className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
+              title="Send emergency SOS"
+            >
+              <ShieldAlert className="w-5 h-5" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => handleNav('profile')}
+            className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full hover:bg-gray-50 transition-colors"
+          >
+            <span className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center">
+              {user.profileImage ? (
+                <img src={user.profileImage} alt={user.name} className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-4 h-4 text-gray-500" />
+              )}
+            </span>
+            <span className="text-sm font-semibold hidden md:inline">{user.name}</span>
+          </button>
+
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="p-2 hover:bg-gray-50 rounded-lg md:hidden"
+            title="Menu"
+          >
+            <Menu className="w-5 h-5 text-gray-600" />
+          </button>
+
+          <button
+            onClick={onLogout}
+            className="hidden md:flex p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+            title="Sign out"
           >
             <LogOut className="w-5 h-5" />
           </button>
         </div>
       </div>
 
-      {/* Mobile Menu */}
       <AnimatePresence>
         {isMenuOpen && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute top-full left-0 right-0 bg-white border-b border-gray-100 p-6 shadow-xl lg:hidden flex flex-col gap-4"
+            className="absolute top-full left-0 right-0 bg-white border-b border-gray-100 p-6 shadow-xl md:hidden flex flex-col gap-4"
           >
             <button onClick={() => handleNav('dashboard')} className="flex items-center justify-between font-bold text-lg p-2 rounded-xl hover:bg-gray-50">Dashboard <ChevronRight className="w-5 h-5 text-gray-400" /></button>
+            {user.role === 'admin' && (
+              <button onClick={() => handleNav('admin-dashboard')} className="flex items-center justify-between font-bold text-lg p-2 rounded-xl hover:bg-gray-50">Hub Admin <ChevronRight className="w-5 h-5 text-gray-400" /></button>
+            )}
             <button onClick={() => handleNav('services')} className="flex items-center justify-between font-bold text-lg p-2 rounded-xl hover:bg-gray-50">Services <ChevronRight className="w-5 h-5 text-gray-400" /></button>
-            <button onClick={() => handleNav('resources')} className="flex items-center justify-between font-bold text-lg p-2 rounded-xl hover:bg-gray-50">Resources <ChevronRight className="w-5 h-5 text-gray-400" /></button>
+            <button onClick={() => handleNav('resources')} className="flex items-center justify-between font-bold text-lg p-2 rounded-xl hover:bg-gray-50">Library <ChevronRight className="w-5 h-5 text-gray-400" /></button>
             <button onClick={() => handleNav('wallet')} className="flex items-center justify-between font-bold text-lg p-2 rounded-xl hover:bg-gray-50">Wallet <ChevronRight className="w-5 h-5 text-gray-400" /></button>
-            <button onClick={onLogout} className="flex items-center justify-between font-bold text-lg p-2 rounded-xl hover:bg-red-50 text-red-600">Logout <LogOut className="w-5 h-5" /></button>
+            <button onClick={onLogout} className="flex items-center justify-between font-bold text-lg p-2 rounded-xl hover:bg-red-50 text-red-600">Sign out <LogOut className="w-5 h-5" /></button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -177,36 +268,174 @@ const Navbar = ({ onViewChange, currentView, user, onLogout, onSOS }: { onViewCh
   );
 };
 
-const AuthPage = ({ mode, onSwitch, onLogin }: { mode: AuthMode, onSwitch: (m: AuthMode) => void, onLogin: () => void }) => {
+const PROVIDER_SKILL_OPTIONS: { id: string; label: string }[] = [
+  { id: 'medical', label: 'Medical' },
+  { id: 'pharmacy', label: 'Pharmacy' },
+  { id: 'essentials', label: 'Essentials' },
+  { id: 'admin', label: 'Admin/Bills' },
+  { id: 'transport', label: 'Transport' },
+];
+
+type SignupKind = 'family' | 'provider';
+
+const AuthPage = ({
+  mode,
+  onSwitch,
+  isSupabaseConfigured,
+  onLogin,
+  onSignUp,
+  onDemo,
+}: {
+  mode: AuthMode;
+  onSwitch: (m: AuthMode) => void;
+  isSupabaseConfigured: boolean;
+  onLogin: (email: string, password: string) => Promise<{ error: string | null }>;
+  onSignUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    role: 'child' | 'admin' | 'provider'
+  ) => Promise<{ error: string | null; needsConfirmation?: boolean }>;
+  onDemo: (role: 'child' | 'admin' | 'provider') => void;
+}) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [signupKind, setSignupKind] = useState<SignupKind>('family');
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    setSubmitting(true);
+    const fd = new FormData(e.currentTarget);
+    const email = String(fd.get('email') || '').trim();
+    const password = String(fd.get('password') || '');
+    const fullName = String(fd.get('name') || '').trim();
+    try {
+      if (mode === 'login') {
+        const res = await onLogin(email, password);
+        if (res.error) setError(res.error);
+        return;
+      }
+
+      if (signupKind === 'family') {
+        // Family path → regular Supabase signUp; role is forced to 'child' by AuthContext.
+        const res = await onSignUp(email, password, fullName || email.split('@')[0], 'child');
+        if (res.error) {
+          setError(res.error);
+        } else if (res.needsConfirmation) {
+          setInfo('Account created. Please confirm via the email we just sent, then sign in.');
+        }
+        return;
+      }
+
+      // Provider path → public application endpoint. The server uses the service-role key
+      // to set role + create a Provider record with verified:false. The applicant can sign
+      // in immediately but cannot be assigned tasks until a hub admin verifies them.
+      const phone = String(fd.get('phone') || '').trim();
+      const city = String(fd.get('city') || '').trim();
+      const skills = PROVIDER_SKILL_OPTIONS
+        .map(s => s.id)
+        .filter(id => fd.get(`skill_${id}`) === 'on');
+      const docsNote = String(fd.get('docs') || '').trim();
+      const documents = docsNote
+        ? docsNote
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .slice(0, 6)
+            .map(line => ({ label: line.slice(0, 60), note: line }))
+        : [];
+
+      const res = await fetch('/api/providers/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: fullName,
+          email,
+          password,
+          phone,
+          city,
+          skills,
+          documents,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.error || `Application failed (${res.status})`);
+        return;
+      }
+      // Auto sign-in after a successful application — provider portal will show pending
+      // state since verified:false at this point.
+      const signin = await onLogin(email, password);
+      if (signin.error) {
+        setInfo(json.message || "Application submitted. We'll email you when verified.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen pt-20 bg-gray-50 flex flex-col items-center justify-center p-6">
-      <motion.div 
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md space-y-8"
+        className="w-full max-w-md space-y-6"
       >
         <div className="text-center space-y-2">
-          <div className="w-16 h-16 bg-accent rounded-2xl flex items-center justify-center text-white mx-auto shadow-xl shadow-blue-200 mb-6">
-            <Heart className="w-10 h-10 fill-current" />
+          <div className="w-14 h-14 bg-accent rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg shadow-blue-100 mb-4">
+            <Heart className="w-7 h-7 fill-current" />
           </div>
-          <h2 className="text-4xl font-bold tracking-tight">
-            {mode === 'login' ? 'Welcome Back' : 'Create Account'}
+          <h2 className="text-3xl md:text-4xl font-black tracking-tight">
+            {mode === 'login'
+              ? 'Welcome back'
+              : signupKind === 'provider'
+                ? 'Become a provider partner'
+                : 'Create your account'}
           </h2>
-          <p className="text-gray-500">
-            {mode === 'login' 
-              ? 'Enter your credentials to access your dashboard' 
-              : 'Join FamilyHubs to manage care for your loved ones'}
+          <p className="text-gray-500 text-sm md:text-base">
+            {mode === 'login'
+              ? 'Sign in to coordinate care for your family.'
+              : signupKind === 'provider'
+                ? 'Apply once, get verified by your hub, and start taking jobs.'
+                : 'Join FamilyHubs to manage care for your family.'}
           </p>
+          {!isSupabaseConfigured && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mt-3">
+              Demo mode — any email/password works.
+            </p>
+          )}
         </div>
 
         <div className="uc-card p-8 space-y-6">
-          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onLogin(); }}>
+          {mode === 'signup' && (
+            <div className="grid grid-cols-2 gap-2 p-1 bg-gray-50 rounded-xl">
+              {(['family', 'provider'] as const).map(k => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => { setSignupKind(k); setError(null); setInfo(null); }}
+                  className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                    signupKind === k
+                      ? 'bg-white text-primary shadow-sm'
+                      : 'text-gray-500 hover:text-primary'
+                  }`}
+                >
+                  {k === 'family' ? 'I need help' : 'I provide services'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <form className="space-y-4" onSubmit={handleSubmit}>
             {mode === 'signup' && (
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Full Name</label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input type="text" placeholder="John Doe" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 pl-12 focus:outline-none focus:border-accent" required />
+                  <input name="name" type="text" placeholder="Your full name" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 pl-12 focus:outline-none focus:border-accent" required />
                 </div>
               </div>
             )}
@@ -214,35 +443,105 @@ const AuthPage = ({ mode, onSwitch, onLogin }: { mode: AuthMode, onSwitch: (m: A
               <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type="email" placeholder="name@example.com" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 pl-12 focus:outline-none focus:border-accent" required />
+                <input name="email" type="email" placeholder="name@example.com" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 pl-12 focus:outline-none focus:border-accent" required />
               </div>
             </div>
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Password</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type="password" placeholder="••••••••" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 pl-12 focus:outline-none focus:border-accent" required />
+                <input name="password" type="password" placeholder="••••••••" minLength={mode === 'signup' && signupKind === 'provider' ? 8 : 6} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 pl-12 focus:outline-none focus:border-accent" required />
               </div>
             </div>
-            <button type="submit" className="w-full py-5 bg-accent text-white rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-[0.98]">
-              {mode === 'login' ? 'Login to Dashboard' : 'Create Free Account'}
+
+            {mode === 'signup' && signupKind === 'provider' && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Phone</label>
+                    <input name="phone" type="tel" placeholder="+91 …" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 focus:outline-none focus:border-accent text-sm" required />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-400">City</label>
+                    <input name="city" type="text" placeholder="Miryalaguda" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 focus:outline-none focus:border-accent text-sm" required />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Services I can offer</label>
+                  <div className="flex flex-wrap gap-2">
+                    {PROVIDER_SKILL_OPTIONS.map(s => (
+                      <label key={s.id} className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold cursor-pointer hover:bg-gray-100 transition-colors">
+                        <input type="checkbox" name={`skill_${s.id}`} className="accent-accent" />
+                        {s.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Documents you can share for verification</label>
+                  <textarea
+                    name="docs"
+                    placeholder={'One per line — e.g.\nAadhaar card\nDriving licence\nPolice clearance'}
+                    rows={3}
+                    className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 focus:outline-none focus:border-accent text-sm resize-none"
+                  />
+                  <p className="text-[10px] text-gray-400 leading-snug">
+                    Don't upload documents here. Your hub admin will reach out to collect them after they review your application.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {error && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{error}</p>
+            )}
+            {info && (
+              <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">{info}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full py-5 bg-accent text-white rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-[0.98] disabled:opacity-60"
+            >
+              {submitting
+                ? '…'
+                : mode === 'login'
+                  ? 'Sign in'
+                  : signupKind === 'provider'
+                    ? 'Submit application'
+                    : 'Create account'}
             </button>
+
+            {mode === 'signup' && signupKind === 'family' && (
+              <p className="text-[11px] text-gray-500 text-center leading-snug">
+                Hub admin accounts are not available via public sign-up. They are issued directly by the hub.
+              </p>
+            )}
           </form>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
-            <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-gray-400 font-bold">Or continue with</span></div>
-          </div>
-
-          <button onClick={onLogin} className="w-full py-4 border border-gray-100 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-50 transition-colors">
-            <img src="https://www.google.com/favicon.ico" alt="Google" className="w-4 h-4" />
-            Sign in with Google
-          </button>
+          {!isSupabaseConfigured && mode === 'login' && (
+            <>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
+                <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-gray-400 font-bold">Demo mode</span></div>
+              </div>
+              <button
+                onClick={() => onDemo('child')}
+                className="w-full py-3 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest"
+              >
+                Continue as family demo
+              </button>
+              <p className="text-[10px] text-gray-400 text-center leading-snug">
+                Admin and provider personas are disabled in demo mode for security.
+              </p>
+            </>
+          )}
         </div>
 
         <p className="text-center text-sm font-medium text-gray-500">
-          {mode === 'login' ? "Don't have an account?" : "Already have an account?"}
-          <button 
+          {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
+          <button
             onClick={() => onSwitch(mode === 'login' ? 'signup' : 'login')}
             className="ml-1 text-accent font-bold hover:underline"
           >
@@ -250,6 +549,91 @@ const AuthPage = ({ mode, onSwitch, onLogin }: { mode: AuthMode, onSwitch: (m: A
           </button>
         </p>
       </motion.div>
+    </div>
+  );
+};
+
+const FamilyNoticeboardCard = ({
+  notes,
+  onPost,
+  userImage,
+}: {
+  notes: { id: string; authorName: string; body: string }[];
+  onPost: (body: string) => void;
+  userImage?: string;
+}) => {
+  const [draft, setDraft] = useState('');
+  const [composing, setComposing] = useState(false);
+  const submit = () => {
+    const body = draft.trim();
+    if (!body) return;
+    onPost(body);
+    setDraft('');
+    setComposing(false);
+  };
+  const latest = notes[0];
+
+  return (
+    <div className="uc-card p-6 bg-accent border-none shadow-xl shadow-blue-500/10 relative overflow-hidden group">
+      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+        <MessageSquare className="w-20 h-20 text-white" />
+      </div>
+      <div className="relative z-10 space-y-4">
+        <h4 className="font-bold text-white text-lg">Family Noticeboard</h4>
+        <p className="text-white/60 text-[11px] leading-tight font-medium">
+          Leave a note for the next care manager visit. Your hub admin and provider see it instantly.
+        </p>
+        <div className="flex items-start gap-3 p-4 bg-white/10 rounded-2xl border border-white/10">
+          {userImage ? (
+            <img src={userImage} alt="" className="w-8 h-8 rounded-full border-2 border-white/20" />
+          ) : (
+            <div className="w-8 h-8 rounded-full border-2 border-white/20 bg-white/20 flex items-center justify-center text-[10px] font-bold text-white">You</div>
+          )}
+          <div className="flex-1 min-w-0">
+            {latest ? (
+              <>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/50 mb-1">Latest · {latest.authorName}</p>
+                <p className="text-[12px] text-white/90 leading-snug line-clamp-2">{latest.body}</p>
+              </>
+            ) : (
+              <p className="text-[11px] text-white/80 font-bold">No messages yet. Post when you have an update for the care team.</p>
+            )}
+          </div>
+        </div>
+        {composing ? (
+          <div className="space-y-2">
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              placeholder="Share an update with the care team…"
+              className="w-full min-h-[80px] p-3 bg-white/10 text-white placeholder-white/40 rounded-xl border border-white/10 focus:outline-none focus:border-white/40 text-sm"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={submit}
+                disabled={!draft.trim()}
+                className="flex-1 py-2.5 bg-white text-accent rounded-xl font-bold text-xs disabled:opacity-50"
+              >
+                Post note
+              </button>
+              <button
+                onClick={() => { setComposing(false); setDraft(''); }}
+                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs border border-white/10"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setComposing(true)}
+            className="w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs transition-all border border-white/10"
+          >
+            Post New Note
+          </button>
+        )}
+      </div>
     </div>
   );
 };
@@ -269,42 +653,470 @@ const ServiceCard = ({ icon: Icon, title, description, active = false }: { icon:
 
 // --- Admin Dashboard Components ---
 
-const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { hubId: string, tasks: any[], setTasks: React.Dispatch<React.SetStateAction<any[]>>, hubs: any[], setHubs: React.Dispatch<React.SetStateAction<any[]>>, onLogout?: () => void }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'users' | 'jobs' | 'finances' | 'alerts'>('overview');
+/** Normalise a provider's verificationDocs (legacy = plain strings, new = {label,note,url}). */
+function normalizeProviderDocs(docs: any): { label: string; note?: string; url?: string }[] {
+  if (!Array.isArray(docs)) return [];
+  return docs
+    .map((d: any) => {
+      if (typeof d === 'string') return { label: d };
+      if (d && typeof d === 'object') {
+        return {
+          label: String(d.label || d.type || 'Document'),
+          note: d.note ? String(d.note) : undefined,
+          url: d.url ? String(d.url) : undefined,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean) as { label: string; note?: string; url?: string }[];
+}
+
+/** Build a plain-text application manifest the admin can save to disk. */
+function buildProviderManifest(prov: any): string {
+  const docs = normalizeProviderDocs(prov.verificationDocs);
+  const lines = [
+    'FamilyHubs.in — Provider application manifest',
+    '─'.repeat(60),
+    `Generated:        ${new Date().toISOString()}`,
+    `Provider ID:      ${prov.id || '—'}`,
+    `Name:             ${prov.name || '—'}`,
+    `Email:            ${prov.email || '—'}`,
+    `Phone:            ${prov.phone || '—'}`,
+    `City:             ${prov.city || '—'}`,
+    `Hub:              ${prov.hubId || '—'}`,
+    `Joined:           ${prov.joinedAt || '—'}`,
+    `Status:           ${prov.activeStatus || '—'}`,
+    `Verified:         ${prov.verified ? 'YES' : 'NO (pending review)'}`,
+    `Rating:           ${typeof prov.rating === 'number' ? prov.rating : '—'}`,
+    `Total jobs:       ${typeof prov.totalJobs === 'number' ? prov.totalJobs : '—'}`,
+    `Skills:           ${(prov.skills || []).join(', ') || '—'}`,
+    '',
+    `Self-declared documents (${docs.length}):`,
+  ];
+  if (docs.length === 0) {
+    lines.push('  (none submitted)');
+  } else {
+    docs.forEach((d, idx) => {
+      lines.push(`  ${idx + 1}. ${d.label}${d.note ? ` — ${d.note}` : ''}${d.url ? ` (${d.url})` : ''}`);
+    });
+  }
+  lines.push('', '─'.repeat(60), 'Review checklist:', '  [ ] Identity proof verified', '  [ ] Phone verified', '  [ ] Address verified', '  [ ] Background check complete');
+  return lines.join('\n');
+}
+
+function downloadProviderManifest(prov: any) {
+  const safeName = String(prov.name || 'provider').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 40);
+  const blob = new Blob([buildProviderManifest(prov)], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${safeName}_application.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// --- Support sidebar pill (shows unread badge sourced from chatThreads) ---
+const SupportSidebarItem = ({
+  onSelect,
+  active,
+}: {
+  onSelect: (id: 'support') => void;
+  active: boolean;
+}) => {
+  const { chatThreads } = useApp();
+  const unread = chatThreads.reduce((sum, t) => sum + (t.unreadForAdmin || 0), 0);
+  return (
+    <button
+      onClick={() => onSelect('support')}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+        active ? 'bg-accent text-white shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:bg-gray-50 hover:text-primary'
+      }`}
+    >
+      <HelpCircle className="w-5 h-5" />
+      <span className="flex-1 text-left">Support</span>
+      {unread > 0 && (
+        <span className={`min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black grid place-items-center ${
+          active ? 'bg-white text-accent' : 'bg-red-500 text-white'
+        }`}>
+          {unread > 9 ? '9+' : unread}
+        </span>
+      )}
+    </button>
+  );
+};
+
+// --- Admin Support Console (live inbox + reply pane) ----------------------
+const SupportConsole = ({ hubId }: { hubId: string }) => {
+  const {
+    chatThreads,
+    chatMessages,
+    joinChatThread,
+    sendChatMessage,
+    markChatRead,
+    resolveChatThread,
+  } = useApp();
+
+  const hubThreads = chatThreads.filter(t => !hubId || t.hubId === hubId);
+  const [filter, setFilter] = useState<'all' | 'family' | 'provider' | 'awaiting'>('all');
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const filteredThreads = hubThreads.filter(t => {
+    if (filter === 'all') return true;
+    if (filter === 'awaiting') return t.status === 'awaiting_human';
+    return t.kind === filter;
+  });
+
+  useEffect(() => {
+    if (!activeId && filteredThreads.length > 0) {
+      setActiveId(filteredThreads[0].id);
+    }
+    if (activeId && !hubThreads.find(t => t.id === activeId)) {
+      setActiveId(filteredThreads[0]?.id || null);
+    }
+  }, [filteredThreads, activeId, hubThreads]);
+
+  useEffect(() => {
+    if (activeId) {
+      joinChatThread(activeId);
+      markChatRead(activeId);
+    }
+  }, [activeId, joinChatThread, markChatRead]);
+
+  const activeThread = activeId ? hubThreads.find(t => t.id === activeId) : null;
+  const messages = activeId ? chatMessages[activeId] || [] : [];
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length, activeId]);
+
+  const submit = () => {
+    if (!activeThread) return;
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    sendChatMessage(activeThread.id, trimmed);
+    setDraft('');
+  };
+
+  return (
+    <div className="uc-card bg-white p-0 overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] min-h-[640px]">
+        {/* Inbox column */}
+        <div className="border-b md:border-b-0 md:border-r border-gray-100 flex flex-col">
+          <div className="p-4 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-black uppercase tracking-widest text-primary">Inbox</h3>
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                {hubThreads.length} thread{hubThreads.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="flex gap-1 text-[10px] font-black uppercase tracking-widest">
+              {(['all', 'awaiting', 'family', 'provider'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`flex-1 py-1.5 rounded-md transition-colors ${
+                    filter === f ? 'bg-accent text-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  {f === 'awaiting' ? 'New' : f}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {filteredThreads.length === 0 ? (
+              <div className="p-8 text-center text-gray-400">
+                <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                <p className="text-xs font-black uppercase tracking-widest">No conversations yet</p>
+                <p className="text-[11px] mt-1">Family & partner messages land here.</p>
+              </div>
+            ) : (
+              filteredThreads.map(t => {
+                const isActive = activeId === t.id;
+                const ts = t.updatedAt ? new Date(t.updatedAt) : null;
+                const tsLabel = ts
+                  ? ts.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                  : '';
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveId(t.id)}
+                    className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
+                      isActive ? 'bg-accent/5 border-l-4 border-l-accent' : 'border-l-4 border-l-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-black text-sm text-primary truncate">{t.userName}</span>
+                      {t.unreadForAdmin > 0 && (
+                        <span className="bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                          {t.unreadForAdmin > 9 ? '9+' : t.unreadForAdmin}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ${
+                        t.kind === 'provider' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {t.kind}
+                      </span>
+                      {t.status === 'awaiting_human' && (
+                        <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                          Awaiting
+                        </span>
+                      )}
+                      {t.status === 'resolved' && (
+                        <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                          Resolved
+                        </span>
+                      )}
+                    </div>
+                    {t.lastMessage && (
+                      <p className="text-xs text-gray-500 truncate mt-1">{t.lastMessage}</p>
+                    )}
+                    {tsLabel && (
+                      <p className="text-[10px] text-gray-400 mt-1">{tsLabel}</p>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Conversation column */}
+        <div className="flex flex-col min-h-[480px]">
+          {activeThread ? (
+            <>
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-2 bg-white">
+                <div className="min-w-0">
+                  <div className="font-black text-sm text-primary truncate">{activeThread.userName}</div>
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-0.5">
+                    <span>{activeThread.kind === 'provider' ? 'Partner' : 'Family'}</span>
+                    {activeThread.userEmail && (
+                      <>
+                        <span>·</span>
+                        <span className="truncate normal-case tracking-normal text-gray-500 font-semibold">
+                          {activeThread.userEmail}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {activeThread.status !== 'resolved' && (
+                  <button
+                    onClick={() => resolveChatThread(activeThread.id)}
+                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-gray-200 text-gray-600 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-colors"
+                  >
+                    Mark resolved
+                  </button>
+                )}
+              </div>
+
+              <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 bg-gray-50/40">
+                {messages.length === 0 ? (
+                  <div className="text-center text-gray-400 py-10 text-xs font-bold uppercase tracking-widest">
+                    No messages yet
+                  </div>
+                ) : (
+                  messages.map(m => {
+                    const isAdmin = m.authorRole === 'admin';
+                    const isSystem = m.kind === 'system' || m.authorRole === 'bot';
+                    if (isSystem) {
+                      return (
+                        <div key={m.id} className="flex justify-center my-2">
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">
+                            {m.body}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={m.id}
+                        className={`flex my-1.5 ${isAdmin ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm leading-snug ${
+                            isAdmin
+                              ? 'bg-accent text-white rounded-br-md'
+                              : 'bg-white text-gray-900 border border-gray-100 rounded-bl-md'
+                          }`}
+                        >
+                          {!isAdmin && (
+                            <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-0.5">
+                              {m.authorName || activeThread.userName}
+                            </div>
+                          )}
+                          <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="px-4 py-3 border-t border-gray-100 bg-white">
+                <div className="flex items-center gap-2">
+                  <textarea
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        submit();
+                      }
+                    }}
+                    placeholder="Reply to the customer…"
+                    rows={1}
+                    className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent focus:bg-white resize-none max-h-32"
+                  />
+                  <button
+                    onClick={submit}
+                    disabled={!draft.trim()}
+                    className="w-10 h-10 grid place-items-center rounded-xl bg-accent text-white hover:bg-blue-700 disabled:bg-gray-200 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Send"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-2">
+                  Press Enter to send · Shift+Enter for new line
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 grid place-items-center text-gray-400 text-sm">
+              <div className="text-center px-6">
+                <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                <p className="font-black uppercase tracking-widest text-xs">Select a conversation</p>
+                <p className="text-[11px] mt-1">Or wait for the next family or partner to reach out.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { hubId: string, tasks: any[], setTasks: Dispatch<SetStateAction<any[]>>, hubs: any[], setHubs: Dispatch<SetStateAction<any[]>>, onLogout?: () => void }) => {
+  const {
+    parents,
+    providers,
+    transactions,
+    logs,
+    resources: resourceList,
+    upsertProvider,
+    patchProvider,
+    assignTaskToProvider,
+  } = useApp();
+  const { accessToken } = useAuth();
+  const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'users' | 'jobs' | 'finances' | 'alerts' | 'support'>('overview');
+  const [providerFilter, setProviderFilter] = useState<'all' | 'active'>('all');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { socket } = useSocket();
-  const providers = MOCK_PROVIDERS;
-  const currentHub = hubs.find(h => h.id === hubId) || hubs[0];
+  const emptyHub = { id: hubId, name: 'Your hub', city: '—', totalProviders: 0, activeJobs: 0, emergencyAlerts: 0, revenue: 0 };
+  const currentHub = hubs.find(h => h.id === hubId) || hubs[0] || emptyHub;
   const pendingVerifications = providers.filter(p => !p.verified);
   const activeTasks = tasks.filter(t => t.status !== 'settled');
 
   // Identity Guard state
   const [identityGuardOpen, setIdentityGuardOpen] = useState(false);
   const [pendingDispatch, setPendingDispatch] = useState<{ taskId: string; provider: any } | null>(null);
+  const [onboardOpen, setOnboardOpen] = useState(false);
 
   const handleUpdateStatus = (taskId: string, status: string) => {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t));
-    // Broadcast via Socket.io
     if (socket) {
-      socket.emit('task:update', { taskId, status, updatedBy: 'Hub Admin' });
+      socket.emit('task:update', {
+        taskId,
+        status,
+        updatedBy: 'Hub Admin',
+        hubId: currentHub.id,
+      });
     }
   };
 
-  // Identity Guard: Intercept dispatch to require verification
-  const handleDispatchWithGuard = (taskId: string) => {
+  const pickProviderForTask = (taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
-    const provider = task?.careManager
-      ? providers.find(p => p.name === task.careManager?.name) || providers[0]
-      : providers[0];
+    if (!task) return null;
+    if (task.careManager?.id) {
+      const matched = providers.find(p => p.id === task.careManager.id || p.name === task.careManager.name);
+      if (matched) return matched;
+    }
+    const skill = task.category === 'medical' ? 'medical' : task.category;
+    const skilled = providers.find(p => p.verified && p.activeStatus !== 'offline' && (p.skills || []).includes(skill));
+    if (skilled) return skilled;
+    return providers.find(p => p.verified) || providers[0] || null;
+  };
+
+  const handleDispatchWithGuard = (taskId: string) => {
+    const provider = pickProviderForTask(taskId);
+    if (!provider) {
+      setOnboardOpen(true);
+      return;
+    }
     setPendingDispatch({ taskId, provider });
     setIdentityGuardOpen(true);
   };
 
   const handleIdentityVerified = () => {
     if (pendingDispatch) {
-      handleUpdateStatus(pendingDispatch.taskId, 'assigned');
+      assignTaskToProvider(pendingDispatch.taskId, {
+        id: pendingDispatch.provider.id,
+        name: pendingDispatch.provider.name,
+        photo: pendingDispatch.provider.photo,
+      });
+      patchProvider(pendingDispatch.provider.id, { activeStatus: 'on_job', verified: true });
     }
     setPendingDispatch(null);
+  };
+
+  const handleOnboardProvider = async (data: {
+    name: string;
+    email: string;
+    phone: string;
+    password: string;
+    skills: string[];
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (!accessToken) {
+      return { ok: false, error: 'Sign in as a hub admin to invite providers.' };
+    }
+    try {
+      const res = await fetch('/api/admin/providers/invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          email: data.email,
+          password: data.password,
+          name: data.name,
+          phone: data.phone,
+          skills: data.skills,
+          hubId,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, error: json.error || `Failed (${res.status})` };
+      }
+      // Mirror locally so the admin sees the new provider immediately; the server has
+      // already broadcast `provider:upserted` over the hub socket too.
+      if (json.provider) {
+        upsertProvider(json.provider);
+      }
+      setOnboardOpen(false);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Network error' };
+    }
   };
 
   const SidebarItem = ({ id, icon: Icon, label }: { id: any, icon: any, label: string }) => (
@@ -364,6 +1176,7 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
           <SidebarItem id="jobs" icon={ShieldCheck} label="Job Status" />
           <SidebarItem id="finances" icon={Wallet} label="Escrow" />
           <SidebarItem id="alerts" icon={ShieldAlert} label="Alerts" />
+          <SupportSidebarItem onSelect={(id) => { setActiveTab(id); setIsSidebarOpen(false); }} active={activeTab === 'support'} />
         </nav>
 
         <div className="pt-6 border-t border-gray-100 mt-auto">
@@ -399,6 +1212,7 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                 {activeTab === 'jobs' && 'Job Life-Cycle Monitoring'}
                 {activeTab === 'finances' && 'Escrow & Settlement Ledger'}
                 {activeTab === 'alerts' && 'Emergency Priority Command'}
+                {activeTab === 'support' && 'Live Support Inbox'}
               </p>
             </div>
             <div className="flex items-center gap-4 w-full md:w-auto">
@@ -406,14 +1220,11 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-tighter whitespace-nowrap">Hub Capacity</p>
                  <div className="flex items-center gap-2 mt-1">
                    <div className="flex-1 md:w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                     <div className="bg-emerald-500 h-full w-[65%]" />
+                     <div className="bg-emerald-500 h-full" style={{ width: `${Math.min(100, Math.round(((currentHub.activeJobs || 0) / Math.max(1, (currentHub.totalProviders || 1))) * 100))}%` }} />
                    </div>
-                   <span className="text-[10px] font-black">65%</span>
+                   <span className="text-[10px] font-black">{Math.min(100, Math.round(((currentHub.activeJobs || 0) / Math.max(1, (currentHub.totalProviders || 1))) * 100))}%</span>
                  </div>
                </div>
-               <button className="p-3 bg-gray-50 rounded-xl relative hover:bg-gray-100 transition-colors">
-                 <Plus className="w-5 h-5 text-gray-400" />
-               </button>
             </div>
           </header>
 
@@ -565,49 +1376,140 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                 <div className="uc-card p-5 md:p-8 bg-white">
                   <div className="flex justify-between items-center mb-8 pb-4 border-b border-gray-50">
                     <h3 className="text-lg font-black tracking-tight uppercase tracking-[0.1em]">Provider Pool</h3>
-                    <div className="flex gap-2">
-                      <button className="px-3 py-1 bg-gray-100 rounded-lg text-[10px] font-black uppercase">All</button>
-                      <button className="px-3 py-1 text-gray-400 text-[10px] font-black uppercase">Active</button>
+                    <div className="flex gap-1 bg-gray-50 p-1 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => setProviderFilter('all')}
+                        className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-colors ${
+                          providerFilter === 'all' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-primary'
+                        }`}
+                      >
+                        All ({providers.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProviderFilter('active')}
+                        className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-colors ${
+                          providerFilter === 'active' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-primary'
+                        }`}
+                      >
+                        Active ({providers.filter(p => p.activeStatus !== 'offline').length})
+                      </button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {providers.map(prov => (
-                      <div key={prov.id} className="p-5 rounded-2xl border border-gray-100 bg-white hover:shadow-xl transition-all group flex flex-col gap-4">
-                        <div className="flex items-center gap-4">
-                          <img src={prov.photo} className="w-12 h-12 rounded-xl" />
-                          <div className="flex-1">
-                            <h4 className="font-bold text-primary flex items-center gap-2">
-                              {prov.name}
-                              {prov.verified && <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />}
-                            </h4>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">{prov.skills.join(' • ')}</span>
-                            </div>
-                          </div>
-                          <div className={`px-2 py-1 rounded text-[8px] font-black uppercase ${
-                            prov.activeStatus === 'idle' ? 'bg-blue-50 text-blue-600' : 
-                            prov.activeStatus === 'on_job' ? 'bg-emerald-50 text-emerald-600 animate-pulse' : 
-                            'bg-gray-100 text-gray-400'
-                          }`}>
-                            {prov.activeStatus.replace('_', ' ')}
-                          </div>
+                  {(() => {
+                    const visibleProviders = providerFilter === 'active'
+                      ? providers.filter(p => p.activeStatus !== 'offline')
+                      : providers;
+                    if (visibleProviders.length === 0) {
+                      return (
+                        <div className="p-10 text-center text-sm text-gray-400 border border-dashed border-gray-200 rounded-2xl">
+                          {providers.length === 0
+                            ? 'No providers onboarded yet. Use the Verification Queue card to add one.'
+                            : 'No active providers right now.'}
                         </div>
-                        <div className="flex items-center justify-between pt-4 border-t border-gray-50">
-                          <div className="flex gap-4">
-                            <div>
-                               <p className="text-[8px] font-black text-gray-400 uppercase">Rating</p>
-                               <span className="text-xs font-black">{prov.rating || 'N/A'}</span>
+                      );
+                    }
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {visibleProviders.map(prov => {
+                          const docs = normalizeProviderDocs(prov.verificationDocs);
+                          return (
+                            <div key={prov.id} className="p-5 rounded-2xl border border-gray-100 bg-white hover:shadow-md transition-all flex flex-col gap-4">
+                              <div className="flex items-center gap-4">
+                                {prov.photo ? (
+                                  <img src={prov.photo} alt="" className="w-12 h-12 rounded-xl object-cover" />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center"><User className="w-5 h-5 text-gray-400" /></div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-bold text-primary flex items-center gap-2 truncate">
+                                    {prov.name}
+                                    {prov.verified && <ShieldCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
+                                  </h4>
+                                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter truncate">
+                                    {(prov.skills || []).join(' • ') || 'No skills set'}
+                                  </span>
+                                </div>
+                                <div className={`px-2 py-1 rounded text-[8px] font-black uppercase ${
+                                  prov.activeStatus === 'idle' ? 'bg-blue-50 text-blue-600' :
+                                  prov.activeStatus === 'on_job' ? 'bg-emerald-50 text-emerald-600' :
+                                  'bg-gray-100 text-gray-400'
+                                }`}>
+                                  {prov.activeStatus.replace('_', ' ')}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 text-[10px] text-gray-600">
+                                <a href={`mailto:${prov.email || ''}`} className="flex items-center gap-1.5 truncate hover:text-accent" title={prov.email}>
+                                  <Mail className="w-3 h-3 shrink-0" /> <span className="truncate">{prov.email || '—'}</span>
+                                </a>
+                                <a href={`tel:${prov.phone || ''}`} className="flex items-center gap-1.5 truncate hover:text-accent" title={prov.phone}>
+                                  <Phone className="w-3 h-3 shrink-0" /> <span className="truncate">{prov.phone || '—'}</span>
+                                </a>
+                              </div>
+
+                              <details className="group rounded-xl bg-gray-50/60 border border-gray-100 px-3 py-2">
+                                <summary className="flex items-center justify-between cursor-pointer text-[10px] font-black uppercase tracking-widest text-primary list-none">
+                                  <span className="flex items-center gap-1.5">
+                                    <FileText className="w-3 h-3 text-accent" /> Document wallet ({docs.length})
+                                  </span>
+                                  <ChevronRight className="w-3 h-3 text-gray-400 group-open:rotate-90 transition-transform" />
+                                </summary>
+                                <div className="mt-2.5 pt-2.5 border-t border-gray-100">
+                                  {docs.length === 0 ? (
+                                    <p className="text-[10px] text-gray-400 italic">No documents on file.</p>
+                                  ) : (
+                                    <ul className="space-y-1">
+                                      {docs.map((d, i) => (
+                                        <li key={i} className="text-[11px] flex items-start gap-2">
+                                          <span className="w-4 h-4 rounded-full bg-accent/10 text-accent text-[9px] font-black flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+                                          <span className="flex-1 min-w-0">
+                                            <span className="font-bold text-gray-900">{d.label}</span>
+                                            {d.note && <span className="text-gray-500"> — {d.note}</span>}
+                                            {d.url && (
+                                              <a href={d.url} target="_blank" rel="noreferrer" className="ml-1.5 underline text-accent text-[10px]">Open</a>
+                                            )}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadProviderManifest(prov)}
+                                    className="mt-2 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:bg-accent/5 hover:border-accent text-[10px] font-black uppercase text-gray-600 hover:text-accent flex items-center gap-1.5"
+                                  >
+                                    <FileDown className="w-3 h-3" /> Download manifest
+                                  </button>
+                                </div>
+                              </details>
+
+                              <div className="flex items-center justify-between pt-4 border-t border-gray-50 gap-4">
+                                <div className="flex gap-6 text-xs">
+                                  <div>
+                                     <p className="text-[8px] font-black text-gray-400 uppercase mb-0.5">Rating</p>
+                                     <span className="font-black">{prov.rating || '—'}</span>
+                                  </div>
+                                  <div>
+                                     <p className="text-[8px] font-black text-gray-400 uppercase mb-0.5">Jobs</p>
+                                     <span className="font-black">{prov.totalJobs ?? 0}</span>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => patchProvider(prov.id, { activeStatus: prov.activeStatus === 'offline' ? 'idle' : 'offline' })}
+                                  className="text-[10px] font-black text-accent uppercase hover:underline tracking-tighter"
+                                >
+                                  {prov.activeStatus === 'offline' ? 'Reactivate' : 'Set offline'}
+                                </button>
+                              </div>
                             </div>
-                            <div>
-                               <p className="text-[8px] font-black text-gray-400 uppercase">Jobs</p>
-                               <span className="text-xs font-black">{prov.totalJobs}</span>
-                            </div>
-                          </div>
-                          <button className="text-[10px] font-black text-accent uppercase hover:underline">Full Profile</button>
-                        </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -617,20 +1519,32 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                     <h3 className="text-lg font-black tracking-tight uppercase tracking-[0.1em]">Family Registry</h3>
                   </div>
                   <div className="space-y-4">
-                    {MOCK_PARENTS.map(parent => (
-                      <div key={parent.id} className="p-5 bg-gray-50 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-gray-100 group">
+                    {parents.length === 0 && (
+                      <p className="text-sm text-gray-500 text-center py-8">No parent profiles in your hub yet.</p>
+                    )}
+                    {parents.map(parent => (
+                      <div key={parent.id} className="p-5 bg-gray-50 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-gray-100">
                         <div className="flex items-center gap-4">
-                           <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-primary shadow-sm group-hover:scale-110 transition-transform">
+                           <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-primary shadow-sm">
                               <Heart className="w-6 h-6 text-red-500" />
                            </div>
                            <div>
                              <h4 className="font-bold text-primary">{parent.name}</h4>
-                             <p className="text-[10px] text-gray-400 font-bold uppercase">{parent.address}</p>
+                             <p className="text-[10px] text-gray-400 font-bold uppercase">{parent.address || `${parent.age || '—'} yrs · ${parent.gender || ''}`.trim()}</p>
                            </div>
                         </div>
                         <div className="flex items-center gap-3 w-full md:w-auto">
-                           <button className="flex-1 md:flex-none px-4 py-2 bg-white border border-gray-200 rounded-xl text-[10px] font-black uppercase hover:bg-gray-50">Medical History</button>
-                           <button className="flex-1 md:flex-none px-4 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase hover:bg-accent">Contact Family</button>
+                           {parent.phoneNumber ? (
+                             <a
+                               href={`tel:${parent.phoneNumber}`}
+                               className="flex-1 md:flex-none px-4 py-2 bg-white border border-gray-200 rounded-xl text-[10px] font-black uppercase hover:bg-gray-50 text-center"
+                             >
+                               Call {parent.phoneNumber}
+                             </a>
+                           ) : null}
+                           <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600">
+                             {tasks.filter(t => t.parentId === parent.id).length} active
+                           </span>
                         </div>
                       </div>
                     ))}
@@ -686,7 +1600,10 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                     <h3 className="text-lg font-black tracking-tight uppercase tracking-[0.1em]">Ledger History</h3>
                   </div>
                   <div className="space-y-4">
-                    {MOCK_TRANSACTIONS.map(tx => (
+                    {transactions.length === 0 && (
+                      <p className="text-sm text-gray-500 text-center py-6">No ledger activity yet.</p>
+                    )}
+                    {transactions.map(tx => (
                       <div key={tx.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
                         <div className="flex items-center gap-4">
                            <div className={`p-2 rounded-xl ${tx.amount < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
@@ -694,7 +1611,7 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                            </div>
                            <div>
                              <p className="font-bold text-sm text-primary">{tx.description}</p>
-                             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">{tx.id} • {new Date(tx.date).toLocaleDateString()}</p>
+                             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">{tx.id} • {new Date(tx.timestamp).toLocaleDateString()}</p>
                            </div>
                         </div>
                         <div className="text-right">
@@ -716,36 +1633,48 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                   </div>
                   {currentHub.emergencyAlerts > 0 ? (
                     <div className="p-8 bg-red-50 border border-red-100 rounded-3xl space-y-6 text-center">
-                       <div className="w-20 h-20 bg-red-600 text-white rounded-full flex items-center justify-center mx-auto shadow-2xl shadow-red-200 animate-bounce">
+                       <div className="w-20 h-20 bg-red-600 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-red-200">
                           <ShieldAlert className="w-10 h-10" />
                        </div>
                        <div className="space-y-2">
-                         <h4 className="text-2xl font-black text-red-600">HIGH PRIORITY ALERT</h4>
-                         <p className="text-gray-600 text-sm font-medium">SOS Signal received from Miryalaguda Sector 4 (User: Parent Varshith)</p>
+                         <h4 className="text-2xl font-black text-red-600">High-priority alert</h4>
+                         <p className="text-gray-600 text-sm font-medium">
+                           SOS signal{parents[0] ? ` — family contact: ${parents[0].name}${parents[0].phoneNumber ? ` (${parents[0].phoneNumber})` : ''}` : ' — no family profile linked; verify with the requester directly.'}
+                         </p>
                        </div>
-                       <div className="flex gap-4 max-w-sm mx-auto">
-                         <button className="flex-1 py-4 bg-red-600 text-white font-black rounded-2xl shadow-xl shadow-red-200 uppercase tracking-widest text-xs">Dispatch Resource</button>
-                         <button 
+                       <div className="flex gap-3 max-w-md mx-auto">
+                         {parents[0]?.phoneNumber ? (
+                           <a
+                             href={`tel:${parents[0].phoneNumber}`}
+                             className="flex-1 py-4 bg-red-600 text-white font-black rounded-2xl shadow-md shadow-red-200 uppercase tracking-widest text-xs text-center"
+                           >
+                             Call family
+                           </a>
+                         ) : null}
+                         <button
                            onClick={() => {
                              setHubs(prev => prev.map(h => h.id === hubId ? { ...h, emergencyAlerts: 0 } : h));
-                             // Broadcast acknowledgment via Socket.io
                              if (socket) {
                                socket.emit('sos:acknowledge', { hubId, acknowledgedBy: 'Hub Admin' });
                              }
                            }}
-                           className="px-6 py-4 bg-white border border-red-100 text-red-600 font-black rounded-2xl uppercase tracking-widest text-xs"
+                           className="flex-1 py-4 bg-white border border-red-100 text-red-600 font-black rounded-2xl uppercase tracking-widest text-xs hover:bg-red-100/50 transition-colors"
                          >
                            Acknowledge
                          </button>
                        </div>
                     </div>
                   ) : (
-                    <div className="p-20 text-center space-y-4 opacity-30">
-                       <ShieldCheck className="w-16 h-16 mx-auto text-gray-300" />
-                       <p className="font-black text-gray-400 uppercase tracking-widest">No Active SOS Signals</p>
+                    <div className="p-20 text-center space-y-4 opacity-40">
+                       <ShieldCheck className="w-14 h-14 mx-auto text-gray-300" />
+                       <p className="font-black text-gray-400 uppercase tracking-widest text-xs">No active SOS signals</p>
                     </div>
                   )}
                 </div>
+              )}
+
+              {activeTab === 'support' && (
+                <SupportConsole hubId={hubId} />
               )}
             </div>
 
@@ -754,43 +1683,124 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                  <div className="absolute top-0 right-0 p-8 opacity-10"><Wallet className="w-32 h-32" /></div>
                  <div className="relative z-10 space-y-6">
                    <div>
-                     <p className="text-white/40 text-[10px] font-black uppercase tracking-widest">Hub Settlement Capital</p>
-                     <h3 className="text-3xl sm:text-4xl font-black mt-1">$12,450.00</h3>
+                     <p className="text-white/40 text-[10px] font-black uppercase tracking-widest">Hub revenue (recorded)</p>
+                     <h3 className="text-3xl sm:text-4xl font-black mt-1">${currentHub.revenue.toFixed(2)}</h3>
                    </div>
                    <div className="grid grid-cols-2 gap-4">
                      <div className="bg-white/10 p-4 rounded-2xl">
-                       <p className="text-[10px] font-black text-white/40 uppercase mb-1">Locked</p>
-                       <p className="font-bold text-sm sm:text-base">$8,200</p>
+                       <p className="text-[10px] font-black text-white/40 uppercase mb-1">Active jobs</p>
+                       <p className="font-bold text-sm sm:text-base">{currentHub.activeJobs}</p>
                      </div>
                      <div className="bg-white/10 p-4 rounded-2xl">
-                       <p className="text-[10px] font-black text-white/40 uppercase mb-1">Fee Yield</p>
-                       <p className="font-bold text-sm sm:text-base text-accent">$450</p>
+                       <p className="text-[10px] font-black text-white/40 uppercase mb-1">Providers</p>
+                       <p className="font-bold text-sm sm:text-base text-accent">{currentHub.totalProviders}</p>
                      </div>
                    </div>
-                   <button className="w-full py-4 bg-accent hover:bg-white hover:text-accent rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all">Download Ledger Report</button>
+                   <div className="grid grid-cols-2 gap-4 text-[10px] font-black text-white/40 uppercase">
+                     <div>
+                       <p className="mb-1">Avg ticket</p>
+                       <p className="text-base font-bold text-white">${currentHub.activeJobs > 0 ? (currentHub.revenue / Math.max(1, currentHub.activeJobs)).toFixed(0) : '—'}</p>
+                     </div>
+                     <div>
+                       <p className="mb-1">Verified providers</p>
+                       <p className="text-base font-bold text-accent">{providers.filter(p => p.verified).length}/{providers.length}</p>
+                     </div>
+                   </div>
                  </div>
               </div>
 
               <div className="uc-card p-6 md:p-8 bg-white">
-                <h4 className="font-black text-primary text-sm uppercase tracking-widest mb-6">Verification Queue</h4>
+                <div className="flex items-center justify-between mb-6">
+                  <h4 className="font-black text-primary text-sm uppercase tracking-widest">Verification Queue</h4>
+                  <button
+                    type="button"
+                    onClick={() => setOnboardOpen(true)}
+                    className="px-3 py-1.5 bg-accent text-white rounded-lg text-[10px] font-black uppercase tracking-tighter hover:bg-blue-700 transition-all flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" /> Onboard
+                  </button>
+                </div>
                 <div className="space-y-4">
-                  {pendingVerifications.map(prov => (
-                    <div key={prov.id} className="p-4 rounded-[24px] border border-gray-100 bg-gray-50/50 space-y-4 shadow-sm hover:shadow-md transition-all">
-                      <div className="flex items-center gap-3">
-                        <img src={prov.photo} className="w-10 h-10 rounded-xl" />
-                        <div>
-                          <p className="font-bold text-sm">{prov.name}</p>
-                          <p className="text-[9px] font-black text-gray-400 uppercase">Docs Waiting Audit</p>
+                  {pendingVerifications.map(prov => {
+                    const docs = normalizeProviderDocs(prov.verificationDocs);
+                    return (
+                      <div key={prov.id} className="p-4 rounded-[24px] border border-gray-100 bg-gray-50/50 space-y-4 shadow-sm hover:shadow-md transition-all">
+                        <div className="flex items-center gap-3">
+                          {prov.photo ? (
+                            <img src={prov.photo} alt="" className="w-10 h-10 rounded-xl object-cover" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-xl bg-gray-200 flex items-center justify-center"><User className="w-5 h-5 text-gray-500" /></div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-sm truncate">{prov.name}</p>
+                            <p className="text-[9px] font-black text-gray-400 uppercase truncate">{(prov.skills || []).join(' • ') || 'No skills set'}</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[10px] text-gray-600">
+                          <a href={`mailto:${prov.email || ''}`} className="flex items-center gap-1.5 truncate hover:text-accent" title={prov.email}>
+                            <Mail className="w-3 h-3 shrink-0" /> <span className="truncate">{prov.email || '—'}</span>
+                          </a>
+                          <a href={`tel:${prov.phone || ''}`} className="flex items-center gap-1.5 truncate hover:text-accent" title={prov.phone}>
+                            <Phone className="w-3 h-3 shrink-0" /> <span className="truncate">{prov.phone || '—'}</span>
+                          </a>
+                          {prov.city && (
+                            <div className="flex items-center gap-1.5 truncate col-span-2" title={prov.city}>
+                              <MapPin className="w-3 h-3 shrink-0 text-gray-400" /> <span className="truncate">{prov.city}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="rounded-2xl bg-white border border-gray-100 p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <FileText className="w-3.5 h-3.5 text-accent" />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-primary">Document wallet ({docs.length})</span>
+                          </div>
+                          {docs.length === 0 ? (
+                            <p className="text-[10px] text-gray-400 italic">No documents declared yet. Reach out to applicant for KYC.</p>
+                          ) : (
+                            <ul className="space-y-1.5">
+                              {docs.map((d, i) => (
+                                <li key={i} className="text-[11px] flex items-start gap-2">
+                                  <span className="w-4 h-4 rounded-full bg-accent/10 text-accent text-[9px] font-black flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+                                  <span className="flex-1 min-w-0">
+                                    <span className="font-bold text-gray-900">{d.label}</span>
+                                    {d.note && <span className="text-gray-500"> — {d.note}</span>}
+                                    {d.url && (
+                                      <a href={d.url} target="_blank" rel="noreferrer" className="ml-1.5 underline text-accent text-[10px]">Open</a>
+                                    )}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => patchProvider(prov.id, { verified: true, activeStatus: 'idle' })}
+                            className="flex-1 py-2.5 bg-primary text-white rounded-xl text-[10px] font-black uppercase hover:bg-accent transition-all"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => downloadProviderManifest(prov)}
+                            className="px-3 py-2.5 border border-gray-200 rounded-xl hover:bg-accent/5 hover:border-accent transition-colors flex items-center gap-1.5 text-[10px] font-black uppercase text-gray-600 hover:text-accent"
+                            title="Download application manifest"
+                          >
+                            <FileDown className="w-3.5 h-3.5" /> Save
+                          </button>
+                          <button
+                            onClick={() => patchProvider(prov.id, { activeStatus: 'offline' })}
+                            className="px-3 py-2.5 border border-gray-200 rounded-xl hover:bg-red-50 hover:border-red-200 transition-colors group"
+                            title="Reject (mark offline)"
+                          >
+                            <X className="w-4 h-4 text-gray-400 group-hover:text-red-500" />
+                          </button>
                         </div>
                       </div>
-                      <div className="flex gap-2">
-                         <button className="flex-1 py-2.5 bg-primary text-white rounded-xl text-[10px] font-black uppercase hover:bg-accent transition-all">Approve</button>
-                         <button className="px-3 py-2.5 border border-gray-200 rounded-xl hover:bg-red-50 transition-colors group">
-                           <Plus className="w-4 h-4 text-gray-400 group-hover:text-red-500 rotate-45" />
-                         </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {pendingVerifications.length === 0 && <p className="text-center text-[10px] text-gray-400 font-bold uppercase py-4">Queue Clear</p>}
                 </div>
               </div>
@@ -817,6 +1827,118 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
           onVerified={handleIdentityVerified}
         />
       )}
+
+      <OnboardProviderModal
+        isOpen={onboardOpen}
+        onClose={() => setOnboardOpen(false)}
+        onSubmit={handleOnboardProvider}
+      />
+    </div>
+  );
+};
+
+const OnboardProviderModal = ({
+  isOpen,
+  onClose,
+  onSubmit,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (data: {
+    name: string;
+    email: string;
+    phone: string;
+    password: string;
+    skills: string[];
+  }) => Promise<{ ok: boolean; error?: string }>;
+}) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!isOpen) return null;
+  const SKILL_OPTIONS: { id: string; label: string }[] = [
+    { id: 'medical', label: 'Medical' },
+    { id: 'pharmacy', label: 'Pharmacy' },
+    { id: 'essentials', label: 'Essentials' },
+    { id: 'admin', label: 'Admin/Bills' },
+    { id: 'transport', label: 'Transport' },
+  ];
+  return (
+    <div className="fixed inset-0 z-[180] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-primary/70 backdrop-blur-sm" onClick={onClose} />
+      <motion.form
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setError(null);
+          setSubmitting(true);
+          const fd = new FormData(e.currentTarget);
+          const skills = SKILL_OPTIONS
+            .map(s => s.id)
+            .filter(id => fd.get(`skill_${id}`) === 'on');
+          const res = await onSubmit({
+            name: String(fd.get('name') || '').trim(),
+            email: String(fd.get('email') || '').trim(),
+            phone: String(fd.get('phone') || '').trim(),
+            password: String(fd.get('password') || ''),
+            skills,
+          });
+          setSubmitting(false);
+          if (!res.ok) setError(res.error || 'Failed to invite provider');
+        }}
+        className="relative bg-white w-full max-w-md rounded-3xl p-6 space-y-5 shadow-2xl"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-black tracking-tight">Invite Provider</h3>
+          <button type="button" onClick={onClose} className="p-2 hover:bg-gray-50 rounded-lg"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Full name</label>
+            <input name="name" required className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 focus:outline-none focus:border-accent text-sm" placeholder="e.g. Venu K." />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Email</label>
+              <input name="email" type="email" required className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 focus:outline-none focus:border-accent text-sm" placeholder="venu@example.com" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Phone</label>
+              <input name="phone" type="tel" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 focus:outline-none focus:border-accent text-sm" placeholder="+91 …" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Temporary Password</label>
+            <input name="password" type="text" minLength={8} required className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 focus:outline-none focus:border-accent text-sm font-mono" placeholder="At least 8 characters" />
+            <p className="text-[10px] text-gray-400">Share securely with the provider; they should change it after first login.</p>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Skills</label>
+            <div className="flex flex-wrap gap-2">
+              {SKILL_OPTIONS.map(s => (
+                <label key={s.id} className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold cursor-pointer hover:bg-gray-100 transition-colors">
+                  <input type="checkbox" name={`skill_${s.id}`} className="accent-accent" />
+                  {s.label}
+                </label>
+              ))}
+            </div>
+          </div>
+          {error && (
+            <p className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{error}</p>
+          )}
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button type="submit" disabled={submitting} className="flex-1 py-3 bg-accent text-white rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-60">
+            {submitting ? 'Inviting…' : 'Invite provider'}
+          </button>
+          <button type="button" onClick={onClose} className="px-5 py-3 bg-gray-50 text-gray-500 rounded-xl font-black text-xs uppercase tracking-widest">
+            Cancel
+          </button>
+        </div>
+        <p className="text-[10px] text-gray-400 text-center">
+          Creates a real provider login secured by Supabase. Auto-verified on save.
+        </p>
+      </motion.form>
     </div>
   );
 };
@@ -824,201 +1946,155 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
 // --- Main Views ---
 
 export default function App() {
-  const [session, setSession] = useState<{ id: string } | null>(null);
-  const [authMode, setAuthMode] = useState<AuthMode>('login');
-  const [view, setView] = useState<AppView>('landing');
-  const [selectedTask, setSelectedTask] = useState<string | null>(null);
-  const [selectedCategories, setSelectedCategories] = useState<ServiceCategory[]>([]);
-  const [editingParentId, setEditingParentId] = useState<string | null>(null);
-  const [parents, setParents] = useState(MOCK_PARENTS);
-  const [tasks, setTasks] = useState(MOCK_TASKS);
-  const [hubs, setHubs] = useState(MOCK_HUBS);
-  const [user, setUser] = useState<UserType>(MOCK_USER);
-  const [isSOSActive, setIsSOSActive] = useState(false);
-  const { socket, isConnected } = useSocket();
+  const {
+    session,
+    setSession,
+    authMode,
+    setAuthMode,
+    user,
+    setUser,
+    login,
+    logout,
+    switchToAdmin,
+    switchToUser,
+    updateProfile,
+    view,
+    setView,
+    tasks,
+    setTasks,
+    selectedTask,
+    setSelectedTask,
+    handleTaskStatusUpdate,
+    createTask,
+    parents,
+    upsertParent,
+    patchParent,
+    deleteParent,
+    editingParentId,
+    setEditingParentId,
+    selectedParentId,
+    setSelectedParentId,
+    hubs,
+    setHubs,
+    selectedCategories,
+    setSelectedCategories,
+    toggleCategory,
+    startBooking,
+    searchQuery,
+    setSearchQuery,
+    activeCategory,
+    setActiveCategory,
+    showSOS,
+    setShowSOS,
+    handleSOS,
+    handleSOSAcknowledge,
+    services,
+    providers,
+    transactions,
+    wallet,
+    topUpWallet,
+    notes,
+    postNote,
+    assignTaskToProvider,
+    upsertProvider,
+    isSupabaseConfigured,
+    signUp,
+    logs,
+    resources,
+  } = useApp();
 
-  // --- Socket.io: Listen for real-time events from other clients ---
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleTaskUpdated = (data: { taskId: string; status: string }) => {
-      setTasks(prev => prev.map(t => (t.id === data.taskId ? { ...t, status: data.status } : t)));
-    };
-
-    const handleTaskCreated = (data: any) => {
-      setTasks(prev => {
-        if (prev.find(t => t.id === data.id)) return prev;
-        return [data, ...prev];
-      });
-    };
-
-    const handleSOSBroadcast = (data: any) => {
-      setHubs(prev => prev.map(h => h.id === data.hubId ? { ...h, emergencyAlerts: (h.emergencyAlerts || 0) + 1 } : h));
-    };
-
-    const handleSOSAcknowledged = (data: { hubId: string }) => {
-      setHubs(prev => prev.map(h => (h.id === data.hubId ? { ...h, emergencyAlerts: 0 } : h)));
-    };
-
-    socket.on('task:updated', handleTaskUpdated);
-    socket.on('task:created', handleTaskCreated);
-    socket.on('sos:broadcast', handleSOSBroadcast);
-    socket.on('sos:acknowledged', handleSOSAcknowledged);
-
-    return () => {
-      socket.off('task:updated', handleTaskUpdated);
-      socket.off('task:created', handleTaskCreated);
-      socket.off('sos:broadcast', handleSOSBroadcast);
-      socket.off('sos:acknowledged', handleSOSAcknowledged);
-    };
-  }, [socket]);
-
-  const handleSOS = () => {
-     setIsSOSActive(true);
-     const hubId = user.hubId || 'hub_mgl';
-     // Update hubs state to reflect the alert
-     setHubs(prev => prev.map(h => h.id === hubId ? { ...h, emergencyAlerts: h.emergencyAlerts + 1 } : h));
-     // Broadcast SOS via Socket.io to all hub admins
-     if (socket && isConnected) {
-       socket.emit('sos:trigger', {
-         userId: user.id,
-         hubId,
-         parentName: parents[0]?.name || 'Parent',
-         location: 'Miryalaguda Sector 4',
-       });
-     }
-  };
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string>('all');
-  const [selectedParentId, setSelectedParentId] = useState<string>(MOCK_PARENTS[0].id);
-
-  const [showSOS, setShowSOS] = useState(false);
-
-  const vitalsHistory = [
-    { date: 'Apr 18', value: 120 },
-    { date: 'Apr 19', value: 122 },
-    { date: 'Apr 20', value: 118 },
-    { date: 'Apr 21', value: 125 },
-    { date: 'Apr 22', value: 121 },
-    { date: 'Apr 23', value: 119 },
-    { date: 'Apr 24', value: 120 },
-  ];
-
-  const filteredServices = SERVICES.filter(s => 
+  const filteredServices = services.filter(s => 
     (activeCategory === 'all' || s.id === activeCategory) &&
     (s.title.toLowerCase().includes(searchQuery.toLowerCase()) || s.desc.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const startBooking = (category?: ServiceCategory) => {
-    setSelectedCategories(category ? [category] : []);
-    setView('booking');
+  const currentEditingParent = parents.find(p => p.id === editingParentId) ?? (parents[0] ?? null);
+  const childHub = hubs.find((h) => h.id === (user as { hubId?: string }).hubId) ||
+    hubs[0] || {
+    id: 'default',
+    name: 'Your hub',
+    city: '—',
+    totalProviders: 0,
+    activeJobs: 0,
+    emergencyAlerts: 0,
+    revenue: 0,
   };
-
-  const toggleCategory = (cat: ServiceCategory) => {
-    setSelectedCategories(prev => 
-      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
-    );
-  };
-
-  const deleteParent = (id: string) => {
-    if (confirm('Are you sure you want to delete this parent profile?')) {
-      setParents(parents.filter(p => p.id !== id));
-    }
-  };
-
-  const updateProfile = (data: Partial<typeof MOCK_USER>) => {
-    setUser(prev => ({ ...prev, ...data }));
-    setView('dashboard');
-  };
-
-  const login = () => {
-    // If it's a demo, we follow the email-based role assignment
-    if (user.email.toLowerCase().includes('admin')) {
-      setUser(MOCK_ADMIN);
-      setView('admin-dashboard');
-    } else {
-      setUser(MOCK_USER);
-      setView('dashboard');
-    }
-    setSession({ id: user.id });
-  };
-
-  const switchToAdmin = () => {
-    setUser(MOCK_ADMIN);
-    setView('admin-dashboard');
-  };
-
-  const switchToUser = () => {
-    setUser(MOCK_USER);
-    setView('dashboard');
-  };
-
-  const logout = () => {
-    setSession(null);
-    setView('landing');
-  };
-
-  const currentEditingParent = parents.find(p => p.id === editingParentId) || parents[0];
 
   const stats = [
     { label: 'Upcoming Tasks', value: tasks.filter(t => t.status !== 'settled').length.toString().padStart(2, '0'), icon: Activity, color: 'text-blue-600' },
-    { label: 'Care Quality', value: '4.9/5', icon: ShieldCheck, color: 'text-green-600' },
+    { label: 'Care Quality', value: '—', icon: ShieldCheck, color: 'text-green-600' },
     { label: 'Escrow Lock', value: `$${user.escrowBalance.toFixed(2)}`, icon: Lock, color: 'text-indigo-600' },
   ];
 
-  if (!session && view !== 'landing') {
-    return <AuthPage mode={authMode} onSwitch={setAuthMode} onLogin={login} />;
+  // /app/* is the authenticated experience. If nobody's signed in, send them to the
+  // public family landing page; the role-specific landings (/providers, /hubs) are
+  // also reachable from there. This means AuthPage is now only used at landing pages.
+  if (!session) {
+    return <Navigate to="/" replace />;
   }
 
   return (
     <div className={`min-h-screen bg-white ${view !== 'admin-dashboard' && view !== 'provider-dashboard' ? 'pt-20' : ''}`}>
       {view !== 'admin-dashboard' && view !== 'provider-dashboard' && (
-        <Navbar onViewChange={setView} currentView={view} user={user} onLogout={logout} onSOS={() => setShowSOS(true)} />
+        <Navbar
+          onViewChange={setView}
+          currentView={view}
+          user={user}
+          onLogout={logout}
+          onSOS={() => setShowSOS(true)}
+          isAuthed={!!session}
+          onSignIn={() => { setAuthMode('login'); setView('dashboard'); }}
+          onSignUp={() => { setAuthMode('signup'); setView('dashboard'); }}
+        />
       )}
 
-            {/* SOS Modal */}
       <AnimatePresence>
         {showSOS && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-red-900/90 backdrop-blur-md"
+              className="absolute inset-0 bg-red-900/80 backdrop-blur-sm"
               onClick={() => setShowSOS(false)}
             />
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="relative bg-white w-full max-w-md rounded-[32px] p-8 text-center space-y-6 shadow-2xl overflow-hidden"
+            <motion.div
+              initial={{ scale: 0.96, y: 12, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.96, y: 12, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="relative bg-white w-full max-w-md rounded-3xl p-8 text-center space-y-6 shadow-2xl"
             >
-              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-orange-500 to-red-500 animate-shimmer" />
-              <div className="w-24 h-24 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto animate-bounce">
-                <ShieldAlert className="w-12 h-12" />
+              <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                <ShieldAlert className="w-10 h-10" />
               </div>
               <div className="space-y-2">
-                <h2 className="text-3xl font-black text-primary">Emergency SOS</h2>
-                <p className="text-gray-500 font-medium">Broadcasting live location & medical records to nearby hubs and pre-verified neighbors.</p>
+                <h2 className="text-2xl md:text-3xl font-black text-primary">Emergency SOS</h2>
+                <p className="text-gray-500 font-medium text-sm md:text-base">
+                  Confirm to broadcast your live location and medical card to nearby hubs and pre-verified neighbours.
+                </p>
               </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-4 bg-red-50 rounded-2xl border border-red-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 bg-red-600 rounded-full animate-ping" />
-                    <span className="text-[10px] font-black text-red-900 uppercase">Miryalaguda Hub Notified</span>
-                  </div>
-                  <CheckCircle2 className="w-4 h-4 text-red-600" />
-                </div>
+              <div className="flex items-center justify-between p-3.5 bg-red-50 rounded-2xl border border-red-100">
+                <span className="text-[10px] font-black text-red-900 uppercase tracking-widest">Channel ready</span>
+                <CheckCircle2 className="w-4 h-4 text-red-600" />
               </div>
-              <button 
-                onClick={() => {
-                  setShowSOS(false);
-                  handleSOS(); // Increment admin count
-                }}
-                className="w-full py-4 bg-primary text-white rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-gray-200"
-              >
-                Confirm SOS Broadcast
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowSOS(false)}
+                  className="flex-1 py-3.5 bg-gray-50 text-gray-500 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-gray-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSOS(false);
+                    handleSOS();
+                  }}
+                  className="flex-[2] py-3.5 bg-red-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-colors"
+                >
+                  Send SOS now
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
@@ -1044,66 +2120,58 @@ export default function App() {
                   Care for your <br className="hidden lg:block" /><span className="text-accent underline decoration-accent/20 underline-offset-4">Parents.</span>
                 </h2>
                 <p className="text-base md:text-lg text-gray-500 max-w-lg leading-relaxed mx-auto md:mx-0 font-medium">
-                  Trusted by NRIs worldwide to manage health, essentials, and home logistics for parents in Miryalaguda and Nalgonda.
+                  Coordinate health, essentials, and home logistics for your parents with hub-backed verification and real-time status.
                 </p>
                 <div className="flex flex-col sm:flex-row flex-wrap gap-4 pt-10 justify-center md:justify-start">
-                  <button 
-                    onClick={() => {
-                      setUser(MOCK_USER);
-                      setView('dashboard');
-                      setSession({ id: 'user_1' });
-                    }}
+                  <button
+                    onClick={() => { setAuthMode('signup'); setView('dashboard'); }}
                     className="group relative px-10 py-6 bg-primary text-white rounded-[32px] font-black text-xl overflow-hidden active:scale-95 transition-all shadow-2xl shadow-gray-200"
                   >
                     <div className="absolute inset-0 bg-accent translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-expo" />
                     <span className="relative flex items-center gap-3">
-                       Family Portal
+                       Get Started
                        <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
                     </span>
                   </button>
-                  <button 
-                    onClick={() => {
-                      setUser(MOCK_ADMIN);
-                      setView('admin-dashboard');
-                      setSession({ id: 'admin_1' });
-                    }}
+                  <button
+                    onClick={() => { setAuthMode('login'); setView('dashboard'); }}
                     className="px-10 py-6 bg-white border-2 border-gray-100 text-primary rounded-[32px] font-black text-xl flex items-center justify-center gap-3 hover:bg-gray-50 hover:border-accent transition-all active:scale-95 group"
                   >
-                    Hub Admin
+                    Sign In
                     <LayoutDashboard className="w-6 h-6 text-accent group-hover:rotate-12 transition-transform" />
                   </button>
-                  <button 
-                    onClick={() => {
-                      setUser(MOCK_PROVIDER_USER as any);
-                      setView('provider-dashboard');
-                      setSession({ id: 'prov_1' });
-                    }}
-                    className="px-10 py-6 bg-emerald-600 text-white rounded-[32px] font-black text-xl flex items-center justify-center gap-3 hover:bg-emerald-700 transition-all active:scale-95 group shadow-xl shadow-emerald-200"
-                  >
-                    Service Provider
-                    <Wrench className="w-6 h-6 group-hover:rotate-12 transition-transform" />
-                  </button>
                 </div>
+                {!isSupabaseConfigured && (
+                  <p className="pt-4 text-xs text-gray-400 font-medium">
+                    Running in demo mode —{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUser(MOCK_PROVIDER_USER as any);
+                        setView('provider-dashboard');
+                        setSession({ id: 'prov_1' });
+                      }}
+                      className="underline hover:text-accent transition-colors"
+                    >
+                      open the provider dashboard
+                    </button>
+                    {' '}to preview the service-provider experience.
+                  </p>
+                )}
               </div>
               <div className="flex-1 w-full max-w-lg relative order-1 md:order-2">
                 <div className="absolute -inset-4 bg-accent/5 rounded-3xl -rotate-2" />
                 <div className="relative z-10 grid grid-cols-2 gap-4">
-                  <img 
-                    src="https://images.unsplash.com/photo-1594951466034-704983050a41?auto=format&fit=crop&q=80&w=600" 
-                    alt="Elderly Couple 1" 
-                    className="rounded-2xl shadow-xl aspect-square object-cover"
-                  />
+                  <div className="rounded-2xl shadow-xl aspect-square bg-gradient-to-br from-accent/20 to-primary/10 flex items-center justify-center">
+                    <Heart className="w-16 h-16 text-accent/40" />
+                  </div>
                   <div className="grid grid-rows-2 gap-4">
-                    <img 
-                      src="https://images.unsplash.com/photo-1581579438747-1dc8d17bbce4?auto=format&fit=crop&q=80&w=400" 
-                      alt="Elderly Couple 2" 
-                      className="rounded-2xl shadow-xl h-full object-cover"
-                    />
-                    <img 
-                      src="https://images.unsplash.com/photo-1516733725897-1aa73b87c8e8?auto=format&fit=crop&q=80&w=400" 
-                      alt="Elderly Couple 3" 
-                      className="rounded-2xl shadow-xl h-full object-cover"
-                    />
+                    <div className="rounded-2xl shadow-xl h-full min-h-0 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center">
+                      <ShieldCheck className="w-10 h-10 text-gray-300" />
+                    </div>
+                    <div className="rounded-2xl shadow-xl h-full min-h-0 bg-gradient-to-br from-emerald-50/80 to-teal-50/50 flex items-center justify-center">
+                      <User className="w-10 h-10 text-emerald-200" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1115,7 +2183,7 @@ export default function App() {
                 <p className="text-gray-500 mt-4 text-base md:text-lg">Every detail managed with professional precision and real-time transparency.</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                {SERVICES.slice(0, 3).map(s => (
+                {services.slice(0, 3).map(s => (
                   <div key={s.id} onClick={() => startBooking(s.id as ServiceCategory)} className="cursor-pointer">
                     <ServiceCard 
                       icon={s.icon} 
@@ -1178,20 +2246,19 @@ export default function App() {
               <div className="space-y-1">
                 <h2 className="text-3xl md:text-4xl font-black tracking-tight">Control Center</h2>
                 <p className="text-gray-400 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-                  <MapPin className="w-3.5 h-3.5 text-accent" /> Active in Miryalaguda Hub
+                  <MapPin className="w-3.5 h-3.5 text-accent" /> {childHub.name}{childHub.city && childHub.city !== '—' ? ` · ${childHub.city}` : ''}
                 </p>
               </div>
-              <div className="flex-1 max-w-md hidden xl:block">
-                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-center gap-3 overflow-hidden relative group">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0" />
-                  <div className="flex gap-8 animate-marquee whitespace-nowrap text-[10px] font-black uppercase text-gray-500 tracking-tighter">
-                    <span>Care Manager Arrived at H.No 4-12</span>
-                    <span>Dad's Morning Vitals Recorded</span>
-                    <span>Escrow Released for Task #204</span>
-                    <span>New Specialist Added to Library</span>
+              {logs.length > 0 && (
+                <div className="flex-1 max-w-md hidden xl:block">
+                  <div className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 flex items-center gap-3 overflow-hidden">
+                    <div className="w-2 h-2 bg-emerald-500 rounded-full flex-shrink-0" />
+                    <div className="text-[10px] font-black uppercase text-gray-500 tracking-tighter truncate">
+                      {logs[0].note}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
               <div className="grid grid-cols-3 gap-3 w-full lg:w-auto min-w-[300px] md:min-w-[450px]">
                 {stats.map((stat, i) => (
                   <div key={i} className="uc-card p-3 md:p-4 flex flex-col items-center justify-center text-center hover:border-accent group transition-all">
@@ -1215,6 +2282,12 @@ export default function App() {
                 </button>
               </div>
               <div className="flex overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0 gap-4 no-scrollbar">
+                {parents.length === 0 && (
+                  <div className="w-full uc-card p-8 text-center text-gray-500 text-sm border-dashed">
+                    <p className="mb-3">No family profiles yet. Add a parent to start care tracking.</p>
+                    <button type="button" onClick={() => setView('add-parent')} className="text-accent font-black text-xs uppercase">Add family member</button>
+                  </div>
+                )}
                 {parents.map(p => (
                   <div 
                     key={p.id} 
@@ -1252,7 +2325,7 @@ export default function App() {
                         </div>
                         <div className="text-center">
                           <div className={`text-[8px] uppercase font-bold mb-0.5 ${selectedParentId === p.id ? 'text-white/40' : 'text-gray-400'}`}>Sugar</div>
-                          <div className="text-xs font-black">{p.vitals.glucose.split(' ')[0]}</div>
+                          <div className="text-xs font-black">{p.vitals.glucose?.split(' ')?.[0] ?? '—'}</div>
                         </div>
                       </div>
                     )}
@@ -1282,22 +2355,30 @@ export default function App() {
                           <Activity className="w-5 h-5" />
                        </div>
                        <div>
-                          <h4 className="font-bold">Sector 4 Status</h4>
-                          <p className="text-[9px] text-white/50 font-black uppercase tracking-widest">Miryalaguda Hub</p>
+                          <h4 className="font-bold">Local coverage</h4>
+                          <p className="text-[9px] text-white/50 font-black uppercase tracking-widest">{childHub.name}</p>
                        </div>
                     </div>
                     <div className="space-y-4 pt-2">
                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-white/60">Live Care Managers</span>
-                          <span className="text-[10px] font-black">12 Near You</span>
+                          <span className="text-[10px] font-bold text-white/60">Network providers (hub)</span>
+                          <span className="text-[10px] font-black">{childHub.totalProviders} registered</span>
                        </div>
                        <div className="flex -space-x-2">
-                          {[1,2,3,4,5].map(i => (
-                            <img key={i} src={`https://i.pravatar.cc/150?u=${i+20}`} className="w-6 h-6 rounded-full border-2 border-primary" />
+                          {providers.slice(0, 5).map((p) => (
+                            p.photo ? (
+                              <img key={p.id} src={p.photo} alt="" className="w-6 h-6 rounded-full border-2 border-primary object-cover" />
+                            ) : (
+                              <div key={p.id} className="w-6 h-6 rounded-full border-2 border-primary bg-white/20 flex items-center justify-center">
+                                <User className="w-3.5 h-3.5 text-white/80" />
+                              </div>
+                            )
                           ))}
-                          <div className="w-6 h-6 rounded-full bg-accent border-2 border-primary flex items-center justify-center text-[8px] font-black">+7</div>
+                          {providers.length === 0 && (
+                            <span className="text-[10px] text-white/50 pl-1">—</span>
+                          )}
                        </div>
-                       <p className="text-[10px] text-white/40 leading-tight">Your parent is in a 'High Density' care sector. Estimated response time: &lt; 4 mins.</p>
+                       <p className="text-[10px] text-white/40 leading-tight">Verified providers in your hub appear here. Add active jobs in admin to build local response capacity.</p>
                     </div>
                  </div>
               </div>
@@ -1317,43 +2398,17 @@ export default function App() {
                     </div>
                   </div>
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-emerald-100/50">
-                      <div className="space-y-0.5">
-                        <p className="text-[11px] font-black text-emerald-900">Amlip 5mg</p>
-                        <p className="text-[9px] text-emerald-600 font-bold">NEXT: MAY 12</p>
-                      </div>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-emerald-100/50">
-                      <div className="space-y-0.5">
-                        <p className="text-[11px] font-black text-emerald-900">Metformin 500mg</p>
-                        <p className="text-[9px] text-emerald-600 font-bold">NEXT: MAY 15</p>
-                      </div>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    </div>
+                    <p className="text-sm text-emerald-800/80 p-3 bg-white/60 rounded-xl border border-emerald-100/50">
+                      No linked prescriptions. When your care plan and pharmacy are connected, schedules will show here.
+                    </p>
                   </div>
-                  <button className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-lg shadow-emerald-200 transition-all active:scale-95">
-                    Sync Subscriptions
+                  <button type="button" className="w-full py-3 bg-emerald-600/50 text-white rounded-xl font-bold text-xs cursor-not-allowed" disabled>
+                    Connect care plan
                   </button>
                 </div>
               </div>
 
-              <div className="uc-card p-6 bg-accent border-none shadow-xl shadow-blue-500/10 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                  <MessageSquare className="w-20 h-20 text-white" />
-                </div>
-                <div className="relative z-10 space-y-4">
-                  <h4 className="font-bold text-white text-lg">Family Noticeboard</h4>
-                  <p className="text-white/60 text-[11px] leading-tight font-medium">Leave a note for the next care manager visit.</p>
-                  <div className="flex items-center gap-3 p-4 bg-white/10 rounded-2xl border border-white/10">
-                    <img src={MOCK_USER.profileImage} className="w-8 h-8 rounded-full border-2 border-white/20" />
-                    <p className="text-[11px] text-white/80 font-bold">"Please ask dad if he wants to visit the temple this Sunday."</p>
-                  </div>
-                  <button className="w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs transition-all border border-white/10">
-                    Post New Note
-                  </button>
-                </div>
-              </div>
+              <FamilyNoticeboardCard notes={notes} onPost={postNote} userImage={user.profileImage} />
 
               <div className="uc-card p-6 border-dashed border-2 border-gray-100 bg-white/50 group hover:border-accent/40 transition-all cursor-pointer">
                 <div className="flex items-center gap-3 mb-4">
@@ -1378,6 +2433,28 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {notes.length > 0 && (
+              <div className="uc-card p-6 bg-white border-gray-100 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-accent" /> Recent family notes
+                  </h3>
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">{notes.length} entries</span>
+                </div>
+                <div className="space-y-3 max-h-72 overflow-y-auto no-scrollbar">
+                  {notes.slice(0, 20).map(n => (
+                    <div key={n.id} className="p-3 bg-gray-50 border border-gray-100 rounded-2xl">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{n.authorName} <span className="text-gray-300">·</span> <span className="text-accent">{n.authorRole}</span></p>
+                        <p className="text-[9px] font-bold text-gray-400">{new Date(n.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                      </div>
+                      <p className="text-sm text-primary leading-relaxed whitespace-pre-wrap">{n.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Main Task Area - Horizontal Split */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -1531,15 +2608,10 @@ export default function App() {
                           </div>
                           <div className="pt-4 border-t border-gray-200/50 flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                              <span className="text-[10px] font-bold text-gray-500 uppercase">Live Verification Active</span>
+                              <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Verification ready</span>
                             </div>
-                            <div className="flex gap-2">
-                              <button className="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600 transition-colors shadow-sm active:scale-90" title="Send to Parent via WhatsApp">
-                                <Phone className="w-4 h-4" />
-                              </button>
-                              <button className="text-[10px] font-black text-accent hover:underline uppercase tracking-tighter">Regenerate Code</button>
-                            </div>
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">Share code with the family member</span>
                           </div>
                         </div>
                       </div>
@@ -1628,7 +2700,7 @@ export default function App() {
                       </div>
 
                       <div className="relative border-l-2 border-gray-100 ml-3 pl-8 space-y-10">
-                        {MOCK_LOGS.filter(l => l.taskId === selectedTask).map((log, idx) => (
+                        {logs.filter(l => l.taskId === selectedTask).map((log, idx) => (
                           <div key={idx} className="relative">
                             <div className="absolute -left-[41px] top-0 w-4 h-4 rounded-full bg-accent border-4 border-white shadow-sm" />
                             <p className="text-xs text-gray-400 font-bold mb-1 uppercase">
@@ -1659,12 +2731,22 @@ export default function App() {
                         ))}
                       </div>
 
-                      {tasks.find(t => t.id === selectedTask)?.status === 'completed' && (
-                        <button className="w-full py-5 bg-green-600 text-white rounded-2xl font-black text-lg hover:bg-green-700 shadow-xl shadow-green-100 transition-all active:scale-95 flex flex-col items-center gap-1">
-                          Settlement: Approve & Pay
-                          <span className="text-[10px] opacity-60 font-medium">Releases $15.00 from Escrow to Provider</span>
-                        </button>
-                      )}
+                      {(() => {
+                        const t = tasks.find(t => t.id === selectedTask);
+                        if (!t || t.status !== 'completed') return null;
+                        const cost = (t as any).cost || 0;
+                        return (
+                          <button
+                            onClick={() => handleTaskStatusUpdate(t.id, 'settled')}
+                            className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-base hover:bg-emerald-700 shadow-md shadow-emerald-100 transition-all active:scale-[0.98] flex flex-col items-center gap-1"
+                          >
+                            Approve & settle
+                            {cost > 0 && (
+                              <span className="text-[10px] opacity-70 font-medium">Releases ${cost.toFixed(2)} from escrow to provider</span>
+                            )}
+                          </button>
+                        );
+                      })()}
 
                       <div className="pt-8 border-t border-gray-100 bg-gray-50/50 -mx-6 px-6 pb-6 rounded-b-xl">
                         <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Your Instructions</p>
@@ -1712,11 +2794,18 @@ export default function App() {
                       <h3 className="text-4xl md:text-5xl font-black text-center md:text-left">${user.escrowBalance.toFixed(2)}</h3>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
-                    <button className="bg-accent py-5 rounded-2xl font-bold text-lg hover:bg-blue-700 transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98] flex items-center justify-center gap-2">
-                      <PlusCircle className="w-5 h-5" /> Add Money
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        const raw = prompt('Add money to wallet (USD):', '50');
+                        const amt = Number(raw);
+                        if (!Number.isFinite(amt) || amt <= 0) return;
+                        topUpWallet(amt, 'Manual top-up');
+                      }}
+                      className="w-full bg-accent py-5 rounded-2xl font-bold text-lg hover:bg-blue-700 transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98] flex items-center justify-center gap-2"
+                    >
+                      <PlusCircle className="w-5 h-5" /> Add money
                     </button>
-                    <button className="bg-white/10 py-5 rounded-2xl font-bold text-lg hover:bg-white/20 transition-all backdrop-blur-md border border-white/10 active:scale-[0.98]">Manage Auto-Pay</button>
                   </div>
                 </div>
               </div>
@@ -1745,12 +2834,15 @@ export default function App() {
               <div className="lg:col-span-8 space-y-6">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xl font-bold flex items-center gap-3">
-                    <History className="w-5 h-5 text-gray-400" /> Ledger History
+                    <History className="w-5 h-5 text-gray-400" /> Ledger history
                   </h3>
-                  <button className="text-[10px] font-black text-accent uppercase tracking-widest hover:underline">Download Audit PDF</button>
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{transactions.length} entries</span>
                 </div>
                 <div className="uc-card p-2 space-y-1 shadow-sm border border-gray-100 max-h-[500px] overflow-y-auto no-scrollbar">
-                  {MOCK_TRANSACTIONS.map(tx => (
+                  {transactions.length === 0 && (
+                    <p className="text-center text-sm text-gray-500 py-8">No transactions yet. Fund a booking to see activity here.</p>
+                  )}
+                  {transactions.map(tx => (
                     <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-gray-50 rounded-xl transition-colors group gap-4 border-b border-gray-50 last:border-0">
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
@@ -1844,8 +2936,11 @@ export default function App() {
               </div>
             </div>
 
+            {resources.length === 0 && (
+              <p className="text-center text-gray-500 py-12">No library entries yet. Your hub can add hospitals, pharmacies, and emergency contacts here.</p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {MOCK_RESOURCES.map(res => (
+              {resources.map(res => (
                 <motion.div 
                   key={res.id}
                   whileHover={{ y: -4 }}
@@ -1870,11 +2965,22 @@ export default function App() {
                   <h3 className="text-lg font-bold mb-1 leading-tight">{res.name}</h3>
                   <div className="space-y-1 text-[11px] text-gray-400 mb-6">
                     <p className="flex items-center gap-1.5 truncate"><MapPin className="w-3 h-3" /> {res.address}</p>
+                    {res.phone && <p className="flex items-center gap-1.5 truncate"><Phone className="w-3 h-3" /> {res.phone}</p>}
                   </div>
-                  <button className="w-full py-3 border border-gray-100 group-hover:border-accent group-hover:text-accent rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2">
-                    Referral
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  {res.phone ? (
+                    <a
+                      href={`tel:${res.phone}`}
+                      onClick={e => e.stopPropagation()}
+                      className="w-full py-3 border border-gray-100 group-hover:border-accent group-hover:text-accent rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                    >
+                      Call now
+                      <Phone className="w-3.5 h-3.5" />
+                    </a>
+                  ) : (
+                    <span className="w-full py-3 border border-dashed border-gray-100 text-gray-300 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                      Listing only
+                    </span>
+                  )}
                 </motion.div>
               ))}
             </div>
@@ -1904,7 +3010,7 @@ export default function App() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {selectedCategories.map(catId => {
-                        const s = SERVICES.find(sv => sv.id === catId);
+                        const s = services.find(sv => sv.id === catId);
                         return s ? (
                           <div key={catId} className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-xl border border-gray-100 shadow-sm">
                             <s.icon className={`w-3.5 h-3.5 ${s.color}`} />
@@ -1973,24 +3079,36 @@ export default function App() {
 
                   <div className="pt-4 space-y-4">
                     <button 
+                      disabled={selectedCategories.length === 0}
                       onClick={() => {
+                        if (selectedCategories.length === 0) return;
+                        const cat0 = selectedCategories[0] || 'essentials';
+                        const inst =
+                          (document.querySelector('textarea') as HTMLTextAreaElement)?.value ||
+                          'No specific instructions provided.';
+                        const id = `task_${Math.random().toString(36).slice(2, 11)}`;
+                        const now = new Date().toISOString();
+                        const targetParent = parents.find(p => p.id === selectedParentId) || parents[0];
                         const newTask = {
-                          id: `job_${Math.random().toString(36).substr(2, 9)}`,
-                          title: selectedCategories.length > 1 ? `${selectedCategories.length} Combined Services` : SERVICES.find(s => s.id === selectedCategories[0])?.title || 'Care Service',
-                          status: 'pending',
-                          category: selectedCategories[0] === 'hospital' ? 'medical' : 'essential',
-                          date: new Date().toISOString(),
+                          id,
+                          childId: user.id,
+                          parentId: targetParent?.id || `parent_${Date.now().toString(36)}`,
+                          hubId: (user as { hubId?: string }).hubId || 'hub_mgl',
+                          category: cat0 === 'hospital' ? 'medical' : (cat0 as any),
+                          title:
+                            selectedCategories.length > 1
+                              ? `${selectedCategories.length} Combined Services`
+                              : services.find(s => s.id === selectedCategories[0])?.title || 'Care Service',
+                          description: 'Booked via FamilyHubs',
+                          instructions: inst,
+                          status: 'created',
+                          verificationCode: String(Math.floor(1000 + Math.random() * 9000)),
+                          createdAt: now,
+                          updatedAt: now,
                           cost: selectedCategories.length * 15,
-                          instructions: (document.querySelector('textarea') as HTMLTextAreaElement)?.value || 'No specific instructions provided.',
-                          hubId: user.hubId || 'hub_mgl',
-                          customer: {
-                            name: user.name,
-                            parent: parents[0]?.name || 'Parent'
-                          }
                         };
-                        setTasks(prev => [newTask, ...prev]);
+                        createTask(newTask);
                         setView('dashboard');
-                        // Reset selection
                         setSelectedCategories([]);
                       }}
                       className={`w-full py-5 text-white font-bold text-lg rounded-2xl transition-all shadow-xl shadow-blue-500/20 flex items-center justify-center gap-2 ${
@@ -2012,35 +3130,65 @@ export default function App() {
           </motion.div>
         )}
 
-        {view === 'edit-parent' && (
+        {view === 'edit-parent' && !currentEditingParent && (
+          <motion.div key="edit-parent-empty" className="max-w-md mx-auto px-6 py-20 text-center space-y-4">
+            <p className="text-gray-500">Add a family profile first, then you can edit it here.</p>
+            <button type="button" onClick={() => { setView('add-parent'); }} className="text-accent font-bold">Add family member</button>
+            <button type="button" onClick={() => setView('dashboard')} className="block w-full text-sm text-gray-400">Back to dashboard</button>
+          </motion.div>
+        )}
+
+        {view === 'edit-parent' && currentEditingParent && (
           <motion.div 
             key="edit-parent"
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             className="max-w-2xl mx-auto px-6 py-12"
           >
-            <div className="uc-card p-10 space-y-10">
+            <form
+              className="uc-card p-10 space-y-10"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                const targetId = currentEditingParent.id;
+                const patch = {
+                  name: String(fd.get('name') || currentEditingParent.name).trim() || currentEditingParent.name,
+                  age: Number(fd.get('age') || currentEditingParent.age) || currentEditingParent.age,
+                  gender: (fd.get('gender') as 'Male' | 'Female' | 'Other') || currentEditingParent.gender,
+                  bloodGroup: String(fd.get('bloodGroup') || '').trim() || currentEditingParent.bloodGroup,
+                  allergies: String(fd.get('allergies') || '').trim() || currentEditingParent.allergies,
+                  address: String(fd.get('address') || currentEditingParent.address).trim(),
+                  medicalHistory: String(fd.get('medicalHistory') || currentEditingParent.medicalHistory).trim(),
+                  phoneNumber: String(fd.get('phoneNumber') || currentEditingParent.phoneNumber).trim(),
+                  whatsappNumber: String(fd.get('whatsappNumber') || currentEditingParent.whatsappNumber).trim(),
+                  emergencyContact: String(fd.get('emergencyContact') || currentEditingParent.emergencyContact).trim(),
+                };
+                patchParent(targetId, patch);
+                setEditingParentId(null);
+                setView('dashboard');
+              }}
+            >
               <div className="text-center space-y-2">
                 <div className="w-16 h-16 bg-blue-50 text-accent rounded-3xl flex items-center justify-center mx-auto mb-4">
                   <Edit2 className="w-8 h-8" />
                 </div>
                 <h2 className="text-3xl font-bold tracking-tight">Edit Parent Profile</h2>
-                <p className="text-gray-500">Update details for {currentEditingParent?.name}.</p>
+                <p className="text-gray-500">Update details for {currentEditingParent.name}.</p>
               </div>
 
               <div className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">FullName</label>
-                    <input type="text" defaultValue={currentEditingParent?.name} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
+                    <input name="name" type="text" defaultValue={currentEditingParent?.name} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Age</label>
-                    <input type="number" defaultValue={currentEditingParent?.age} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
+                    <input name="age" type="number" defaultValue={currentEditingParent?.age} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Gender</label>
-                    <select defaultValue={currentEditingParent?.gender} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent">
+                    <select name="gender" defaultValue={currentEditingParent?.gender} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent">
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
                       <option value="Other">Other</option>
@@ -2051,47 +3199,47 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Blood Group</label>
-                    <input type="text" defaultValue={currentEditingParent?.bloodGroup} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="e.g. O+" />
+                    <input name="bloodGroup" type="text" defaultValue={currentEditingParent?.bloodGroup} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="e.g. O+" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Allergies</label>
-                    <input type="text" defaultValue={currentEditingParent?.allergies} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="Peanuts, Penicillin..." />
+                    <input name="allergies" type="text" defaultValue={currentEditingParent?.allergies} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="Peanuts, Penicillin..." />
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Home Address (Miryalaguda/Nalgonda)</label>
-                  <textarea defaultValue={currentEditingParent?.address} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent min-h-[100px]" />
+                  <textarea name="address" defaultValue={currentEditingParent?.address} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent min-h-[100px]" />
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Critical Medical Info</label>
-                  <textarea defaultValue={currentEditingParent?.medicalHistory} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
+                  <textarea name="medicalHistory" defaultValue={currentEditingParent?.medicalHistory} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Primary Phone Number</label>
-                    <input type="tel" defaultValue={currentEditingParent?.phoneNumber} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
+                    <input name="phoneNumber" type="tel" defaultValue={currentEditingParent?.phoneNumber} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400 font-black text-emerald-600">WhatsApp for Safety Relay</label>
-                    <input type="tel" defaultValue={currentEditingParent?.whatsappNumber} className="w-full bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 focus:outline-none focus:border-emerald-500 placeholder:text-gray-300" placeholder="+91 XXXXX XXXXX" />
+                    <input name="whatsappNumber" type="tel" defaultValue={currentEditingParent?.whatsappNumber} className="w-full bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 focus:outline-none focus:border-emerald-500 placeholder:text-gray-300" placeholder="+91 XXXXX XXXXX" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Local Emergency Contact</label>
-                    <input type="text" defaultValue={currentEditingParent?.emergencyContact} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
+                    <input name="emergencyContact" type="text" defaultValue={currentEditingParent?.emergencyContact} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" />
                   </div>
                 </div>
 
                 <div className="pt-6">
-                  <button onClick={() => setView('dashboard')} className="w-full py-5 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-black shadow-xl shadow-gray-200">
+                  <button type="submit" className="w-full py-5 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-black shadow-xl shadow-gray-200">
                     Save Changes
                   </button>
-                  <button onClick={() => setView('dashboard')} className="w-full mt-4 text-sm font-bold text-gray-400 hover:text-primary">Cancel</button>
+                  <button type="button" onClick={() => { setEditingParentId(null); setView('dashboard'); }} className="w-full mt-4 text-sm font-bold text-gray-400 hover:text-primary">Cancel</button>
                 </div>
               </div>
-            </div>
+            </form>
           </motion.div>
         )}
 
@@ -2112,9 +3260,32 @@ export default function App() {
                       <User className="w-12 h-12 text-gray-400 mt-6 mx-auto" />
                     )}
                   </div>
-                  <button className="absolute bottom-0 right-0 w-8 h-8 bg-accent text-white rounded-full flex items-center justify-center shadow-lg hover:bg-blue-700 transition-colors">
+                  <label
+                    title="Upload profile photo"
+                    className="absolute bottom-0 right-0 w-8 h-8 bg-accent text-white rounded-full flex items-center justify-center shadow-lg hover:bg-blue-700 transition-colors cursor-pointer"
+                  >
                     <Camera className="w-4 h-4" />
-                  </button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 2 * 1024 * 1024) {
+                          alert('Please choose an image under 2 MB.');
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          if (typeof reader.result === 'string') {
+                            updateProfile({ profileImage: reader.result });
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </label>
                 </div>
                 <div className="space-y-1">
                   <h2 className="text-3xl font-bold tracking-tight">Profile Settings</h2>
@@ -2243,7 +3414,35 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="max-w-2xl mx-auto px-6 py-12"
           >
-            <div className="uc-card p-10 space-y-10">
+            <form
+              className="uc-card p-10 space-y-10"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                const name = String(fd.get('name') || '').trim();
+                if (!name) return;
+                const id = `parent_${Date.now().toString(36)}`;
+                const newParent = {
+                  id,
+                  name,
+                  age: Number(fd.get('age') || 0) || 0,
+                  gender: (fd.get('gender') as 'Male' | 'Female' | 'Other') || 'Male',
+                  bloodGroup: String(fd.get('bloodGroup') || '').trim() || undefined,
+                  allergies: String(fd.get('allergies') || '').trim() || undefined,
+                  address: String(fd.get('address') || '').trim(),
+                  city: 'Miryalaguda' as const,
+                  locationPin: { lat: 16.8736, lng: 79.5662 },
+                  medicalHistory: String(fd.get('medicalHistory') || '').trim(),
+                  currentMeds: [] as string[],
+                  phoneNumber: String(fd.get('phoneNumber') || '').trim(),
+                  whatsappNumber: String(fd.get('whatsappNumber') || '').trim(),
+                  emergencyContact: String(fd.get('emergencyContact') || '').trim(),
+                };
+                upsertParent(newParent);
+                setSelectedParentId(id);
+                setView('dashboard');
+              }}
+            >
               <div className="text-center space-y-2">
                 <div className="w-16 h-16 bg-blue-50 text-accent rounded-3xl flex items-center justify-center mx-auto mb-4">
                   <Baby className="w-8 h-8" />
@@ -2256,15 +3455,15 @@ export default function App() {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">FullName</label>
-                    <input type="text" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="e.g. S. Raghava" />
+                    <input name="name" required type="text" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="e.g. S. Raghava" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Age</label>
-                    <input type="number" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="68" />
+                    <input name="age" type="number" min={0} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="68" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Gender</label>
-                    <select className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent">
+                    <select name="gender" defaultValue="Male" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent">
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
                       <option value="Other">Other</option>
@@ -2275,44 +3474,45 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Blood Group</label>
-                    <input type="text" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="e.g. O+" />
+                    <input name="bloodGroup" type="text" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="e.g. O+" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Allergies</label>
-                    <input type="text" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="Peanuts, Penicillin..." />
+                    <input name="allergies" type="text" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="Peanuts, Penicillin..." />
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Home Address (Miryalaguda/Nalgonda)</label>
-                  <textarea className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent min-h-[100px]" placeholder="Detailed address with landmarks..." />
+                  <textarea name="address" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent min-h-[100px]" placeholder="Detailed address with landmarks..." />
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Critical Medical Info</label>
-                  <textarea className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="Allergies, chronic conditions..." />
+                  <textarea name="medicalHistory" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="Allergies, chronic conditions..." />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Primary Phone Number</label>
-                    <input type="tel" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="+91 XXXXX XXXXX" />
+                    <input name="phoneNumber" type="tel" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="+91 XXXXX XXXXX" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400 font-black text-emerald-600">WhatsApp Number</label>
-                    <input type="tel" className="w-full bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 focus:outline-none focus:border-emerald-500 placeholder:text-gray-300" placeholder="Relays provider's live photo" />
+                    <input name="whatsappNumber" type="tel" className="w-full bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 focus:outline-none focus:border-emerald-500 placeholder:text-gray-300" placeholder="+91 XXXXX XXXXX" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Local Emergency Contact</label>
-                    <input type="text" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="Neighbor/Relative's Phone Number" />
+                    <input name="emergencyContact" type="text" className="w-full bg-gray-50 border border-gray-100 rounded-xl p-4 focus:outline-none focus:border-accent" placeholder="Neighbor/Relative's Phone Number" />
                   </div>
                 </div>
 
                 <div className="pt-6">
-                  <button className="w-full py-5 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-black shadow-xl shadow-gray-200">
+                  <button type="submit" className="w-full py-5 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-black shadow-xl shadow-gray-200">
                     Register Profile
                   </button>
                   <button 
+                    type="button"
                     onClick={() => setView('dashboard')}
                     className="w-full mt-4 text-sm font-bold text-gray-400 hover:text-primary"
                   >
@@ -2320,7 +3520,7 @@ export default function App() {
                   </button>
                 </div>
               </div>
-            </div>
+            </form>
           </motion.div>
         )}
       </AnimatePresence>

@@ -31,6 +31,12 @@ export interface User {
   hubId?: string; // For providers or hub admins
 }
 
+export interface ProviderDoc {
+  label: string;
+  note?: string;
+  url?: string;
+}
+
 export interface Provider {
   id: string;
   name: string;
@@ -43,7 +49,15 @@ export interface Provider {
   rating: number;
   totalJobs: number;
   joinedAt: string;
-  verificationDocs: string[]; // URLs to ID cards, etc.
+  /**
+   * Self-declared document references collected during application. Each entry has
+   * a label (e.g. "Aadhaar"), an optional note (number / extra detail), and an
+   * optional URL once Supabase Storage upload is wired in. Older legacy entries
+   * stored as plain strings are normalised on read by the admin UI.
+   */
+  verificationDocs: ProviderDoc[];
+  city?: string;
+  hubId?: string;
 }
 
 export interface Hub {
@@ -71,6 +85,8 @@ export interface Parent {
   currentMeds: string[];
   emergencyContact: string;
   allergies?: string;
+  hubId?: string;
+  ownerId?: string;
   vitals?: {
     bloodPressure: string;
     heartRate: number;
@@ -83,6 +99,10 @@ export interface ServiceTask {
   id: string;
   childId: string;
   parentId: string;
+  /** Hub for Socket.io room scoping; set at booking */
+  hubId?: string;
+  /** Assigned field agent (when set, provider portal filters on this) */
+  providerId?: string;
   category: ServiceCategory;
   title: string;
   description: string;
@@ -137,4 +157,51 @@ export interface LocalResource {
   city: 'Miryalaguda' | 'Nalgonda';
   locationPin: { lat: number; lng: number };
   rating?: number;
+}
+
+export interface FamilyNote {
+  id: string;
+  hubId: string;
+  authorId: string;
+  authorName: string;
+  authorRole: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface WalletState {
+  userId: string;
+  balance: number;
+  escrow: number;
+}
+
+export type ChatKind = 'family' | 'provider';
+export type ChatStatus = 'open' | 'awaiting_human' | 'resolved';
+export type ChatAuthorRole = 'family' | 'provider' | 'admin' | 'bot';
+
+export interface ChatThread {
+  id: string;
+  kind: ChatKind;
+  hubId: string;
+  userId: string;
+  userName: string;
+  userEmail?: string;
+  status: ChatStatus;
+  createdAt: string;
+  updatedAt: string;
+  unreadForAdmin: number;
+  unreadForUser: number;
+  lastMessage?: string;
+  lastAuthorRole?: ChatAuthorRole;
+}
+
+export interface ChatMessage {
+  id: string;
+  threadId: string;
+  authorId: string;
+  authorRole: ChatAuthorRole;
+  authorName: string;
+  body: string;
+  createdAt: string;
+  kind?: 'text' | 'faq' | 'system';
 }

@@ -1,10 +1,10 @@
 /**
  * FamilyHubs.in — Socket.io Client Provider
- * Manages real-time connection and event handling.
+ * Re-creates the socket when the session token changes (Supabase).
  */
-
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { io, type Socket } from 'socket.io-client';
+import { useAuth } from './AuthContext';
 
 interface Notification {
   id: string;
@@ -34,60 +34,50 @@ export const useSocket = () => useContext(SocketContext);
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
 export function SocketProvider({ children }: { children: ReactNode }) {
-  const socketRef = useRef<Socket | null>(null);
+  const { accessToken, isSupabaseConfigured } = useAuth();
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
-    // Create socket connection
-    const socket = io(SOCKET_URL, {
+    const s = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      auth: isSupabaseConfigured && accessToken ? { token: accessToken } : {},
     });
 
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      console.log('[FamilyHubs] Real-time engine connected:', socket.id);
+    setSocket(s);
+    s.on('connect', () => {
+      console.log('[FamilyHubs] Real-time engine connected:', s.id);
       setIsConnected(true);
     });
-
-    socket.on('disconnect', (reason) => {
+    s.on('disconnect', reason => {
       console.log('[FamilyHubs] Disconnected:', reason);
       setIsConnected(false);
     });
-
-    socket.on('connect_error', (err) => {
+    s.on('connect_error', err => {
       console.warn('[FamilyHubs] Connection error:', err.message);
       setIsConnected(false);
     });
-
-    // --- Live Notification Channel ---
-    socket.on('notification:push', (notification: Notification) => {
-      setNotifications(prev => [notification, ...prev].slice(0, 50)); // Keep last 50
+    s.on('notification:push', (notification: Notification) => {
+      setNotifications(prev => [notification, ...prev].slice(0, 50));
     });
 
     return () => {
-      socket.disconnect();
-      socketRef.current = null;
+      s.disconnect();
+      setSocket(null);
+      setIsConnected(false);
     };
+  }, [accessToken, isSupabaseConfigured]);
+
+  const clearNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
-  const clearNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
-
   return (
-    <SocketContext.Provider
-      value={{
-        socket: socketRef.current,
-        isConnected,
-        notifications,
-        clearNotification,
-      }}
-    >
+    <SocketContext.Provider value={{ socket, isConnected, notifications, clearNotification }}>
       {children}
     </SocketContext.Provider>
   );

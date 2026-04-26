@@ -1,51 +1,86 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Activity, ArrowRight, Camera, CheckCircle2, ChevronRight, Clock,
+  Activity, ArrowRight, Camera, CheckCircle2, Clock,
   Heart, History, LogOut, MapPin, Menu, Navigation, Phone, ShieldCheck,
   Star, User, Wallet, X, Briefcase, Upload, Lock
 } from 'lucide-react';
-import { useSocket } from '../../context/SocketContext';
 import { ConnectionIndicator } from '../ui/LiveSignalToaster';
-import { MOCK_PROVIDERS, MOCK_PARENTS, MOCK_TASKS } from '../../constants';
+import { useApp } from '../../context/AppContext';
+import type { Provider, ServiceCategory } from '../../types';
 
 type ProviderView = 'home' | 'active-job' | 'earnings' | 'profile' | 'history';
 type JobStep = 'assigned' | 'en_route' | 'arrived' | 'checked_in' | 'in_progress' | 'completed' | 'settled';
 
 const STEP_ORDER: JobStep[] = ['assigned','en_route','arrived','checked_in','in_progress','completed','settled'];
 
-const provider = MOCK_PROVIDERS[0];
-
-const PROVIDER_TASKS = [
-  { ...MOCK_TASKS[0], status: 'settled' as const, providerId: 'prov_1' },
-  { ...MOCK_TASKS[1], status: 'assigned' as const, providerId: 'prov_1' },
-];
-
-const EARNINGS = [
-  { id: 'e1', task: 'Monthly Cardiac Checkup', amount: 15, date: '2026-04-20', status: 'paid' },
-  { id: 'e2', task: 'BP Check Visit', amount: 10, date: '2026-04-18', status: 'paid' },
-  { id: 'e3', task: 'Grocery Run', amount: 12, date: '2026-04-15', status: 'paid' },
-];
+function providerForUser(
+  user: { id: string; name: string; email?: string; phoneNumber?: string; profileImage?: string },
+  providers: Provider[]
+): Provider {
+  const p = providers.find((x) => x.id === user.id);
+  if (p) return p;
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email || '',
+    phone: user.phoneNumber || '',
+    photo: user.profileImage || '',
+    skills: [] as ServiceCategory[],
+    verified: false,
+    activeStatus: 'idle',
+    rating: 0,
+    totalJobs: 0,
+    joinedAt: new Date().toISOString(),
+    verificationDocs: []
+  };
+}
 
 export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
   const [view, setView] = useState<ProviderView>('home');
-  const [tasks, setTasks] = useState(PROVIDER_TASKS as any[]);
   const [isMobileNav, setIsMobileNav] = useState(false);
-  const { socket } = useSocket();
+  const { user, tasks, handleTaskStatusUpdate, parents, providers } = useApp();
+  const provider = useMemo(() => providerForUser(user, providers as Provider[]), [user, providers]);
 
-  const activeJob = tasks.find(t => t.status !== 'settled' && t.status !== 'completed');
-  const completedJobs = tasks.filter(t => t.status === 'settled');
-  const totalEarnings = EARNINGS.reduce((s, e) => s + e.amount, 0);
+  if (!provider.verified) {
+    return <ProviderPendingReview provider={provider} onLogout={onLogout} />;
+  }
+
+  const myTasks = tasks.filter(t => t.providerId === provider.id);
+
+  const activeJob = myTasks.find(t => t.status !== 'settled' && t.status !== 'completed');
+  const completedJobs = myTasks.filter(t => t.status === 'settled');
+  const earningsRows = useMemo(
+    () =>
+      completedJobs.map((j) => ({
+        id: j.id,
+        task: j.title,
+        amount: j.cost,
+        date: (j.evidence?.completedAt || j.updatedAt || j.createdAt).slice(0, 10),
+        status: 'paid' as const
+      })),
+    [completedJobs]
+  );
+  const totalEarnings = earningsRows.reduce((s, e) => s + e.amount, 0);
+  const thisMonthEarnings = useMemo(() => {
+    const y = new Date().getFullYear();
+    const m = new Date().getMonth();
+    return completedJobs
+      .filter((j) => {
+        const d = new Date(j.evidence?.completedAt || j.updatedAt || j.createdAt);
+        return d.getFullYear() === y && d.getMonth() === m;
+      })
+      .reduce((s, j) => s + j.cost, 0);
+  }, [completedJobs]);
+  const jobTotalDisplay = Math.max(provider.totalJobs, completedJobs.length);
 
   const advanceJobStep = (taskId: string) => {
-    setTasks(prev => prev.map(t => {
-      if (t.id !== taskId) return t;
-      const idx = STEP_ORDER.indexOf(t.status);
-      if (idx < 0 || idx >= STEP_ORDER.length - 1) return t;
-      const next = STEP_ORDER[idx + 1];
-      if (socket) socket.emit('task:update', { taskId, status: next, updatedBy: provider.name });
-      return { ...t, status: next };
-    }));
+    const t = myTasks.find(x => x.id === taskId);
+    if (!t) return;
+    const idx = STEP_ORDER.indexOf(t.status as JobStep);
+    if (idx < 0 || idx >= STEP_ORDER.length - 1) return;
+    const next = STEP_ORDER[idx + 1];
+    handleTaskStatusUpdate(taskId, next);
   };
 
   const stepLabel = (s: string) => {
@@ -78,7 +113,7 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
   // ---- ACTIVE JOB WORKFLOW ----
   const ActiveJobView = ({ job }: { job: any }) => {
     const [code, setCode] = useState('');
-    const parent = MOCK_PARENTS[0];
+    const parent = parents.find((p) => p.id === job.parentId) ?? null;
     const stepIdx = STEP_ORDER.indexOf(job.status);
 
     return (
@@ -107,6 +142,7 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
         </div>
 
         {/* Parent info */}
+        {parent ? (
         <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-6 rounded-3xl border border-emerald-100 space-y-4">
           <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Parent Details</h4>
           <div className="flex items-center gap-4">
@@ -129,7 +165,7 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
             </div>
             <div className="bg-white/80 p-3 rounded-xl text-center">
               <p className="text-[8px] font-bold text-gray-400 uppercase">BP</p>
-              <p className="font-black">{parent.vitals?.bloodPressure}</p>
+              <p className="font-black">{parent.vitals?.bloodPressure || '—'}</p>
             </div>
           </div>
           <div className="bg-white/60 p-3 rounded-xl">
@@ -141,6 +177,11 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
             <Phone className="w-4 h-4" /> Call Parent
           </a>
         </div>
+        ) : (
+        <div className="bg-gray-100 p-6 rounded-3xl border border-dashed border-gray-200 text-center text-sm text-gray-500">
+          <p>Family member details for this visit are not in your hub yet. Use task notes and the safety flow until the care profile is linked.</p>
+        </div>
+        )}
 
         {/* Instructions */}
         <div className="bg-amber-50 border border-amber-100 p-5 rounded-2xl">
@@ -213,7 +254,11 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
 
         {/* Provider avatar */}
         <div className="bg-gray-50 rounded-2xl p-4 mb-6 flex items-center gap-3">
-          <img src={provider.photo} className="w-10 h-10 rounded-xl" />
+          {provider.photo ? (
+            <img src={provider.photo} alt="" className="w-10 h-10 rounded-xl object-cover" />
+          ) : (
+            <div className="w-10 h-10 rounded-xl bg-gray-200 flex items-center justify-center"><User className="w-5 h-5 text-gray-500" /></div>
+          )}
           <div>
             <p className="font-bold text-sm">{provider.name}</p>
             <div className="flex items-center gap-1">
@@ -246,7 +291,11 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
             <h2 className="text-sm font-black">FieldOps</h2>
             <p className="text-[8px] text-emerald-600 font-bold uppercase tracking-widest">Provider Portal</p>
           </div>
-          <img src={provider.photo} className="w-8 h-8 rounded-full" />
+          {provider.photo ? (
+            <img src={provider.photo} alt="" className="w-8 h-8 rounded-full object-cover" />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center"><User className="w-4 h-4 text-gray-500" /></div>
+          )}
         </div>
 
         <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-8">
@@ -256,13 +305,13 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
               <motion.div key="home" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <div>
                   <h2 className="text-2xl font-black">Welcome, {provider.name.split(' ')[0]} 👋</h2>
-                  <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Miryalaguda Hub • {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>
+                  <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">{(user as { hubId?: string }).hubId || 'Your hub'} • {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>
                 </div>
 
                 {/* Stats */}
                 <div className="grid grid-cols-3 gap-3">
                   <div className="bg-white p-5 rounded-2xl border border-gray-100 text-center">
-                    <p className="text-2xl font-black text-emerald-600">{provider.totalJobs}</p>
+                    <p className="text-2xl font-black text-emerald-600">{jobTotalDisplay}</p>
                     <p className="text-[9px] font-bold text-gray-400 uppercase mt-1">Total Jobs</p>
                   </div>
                   <div className="bg-white p-5 rounded-2xl border border-gray-100 text-center">
@@ -310,7 +359,10 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
                 {/* Recent earnings */}
                 <div className="space-y-3">
                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Recent Earnings</h3>
-                  {EARNINGS.slice(0, 3).map(e => (
+                  {earningsRows.length === 0 ? (
+                    <p className="text-sm text-gray-400">No settled payouts yet.</p>
+                  ) : (
+                    earningsRows.slice(0, 3).map((e) => (
                     <div key={e.id} className="bg-white p-4 rounded-2xl border border-gray-100 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
@@ -321,9 +373,10 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
                           <p className="text-[10px] text-gray-400">{e.date}</p>
                         </div>
                       </div>
-                      <p className="font-black text-emerald-600">+${e.amount}</p>
+                      <p className="font-black text-emerald-600">+${e.amount.toFixed(2)}</p>
                     </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </motion.div>
             )}
@@ -347,21 +400,24 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
                 <h2 className="text-2xl font-black">Earnings</h2>
                 <div className="bg-emerald-600 p-8 rounded-3xl text-white shadow-xl">
                   <p className="text-white/40 text-[10px] font-black uppercase tracking-widest">Total Earned</p>
-                  <h3 className="text-5xl font-black mt-2">${totalEarnings}.00</h3>
+                  <h3 className="text-5xl font-black mt-2">${totalEarnings.toFixed(2)}</h3>
                   <div className="flex gap-4 mt-6">
                     <div className="bg-white/10 p-4 rounded-2xl flex-1">
                       <p className="text-[10px] font-black text-white/40 uppercase">This Month</p>
-                      <p className="font-bold text-lg">${totalEarnings}</p>
+                      <p className="font-bold text-lg">${thisMonthEarnings.toFixed(2)}</p>
                     </div>
                     <div className="bg-white/10 p-4 rounded-2xl flex-1">
                       <p className="text-[10px] font-black text-white/40 uppercase">Jobs Done</p>
-                      <p className="font-bold text-lg">{EARNINGS.length}</p>
+                      <p className="font-bold text-lg">{completedJobs.length}</p>
                     </div>
                   </div>
                 </div>
                 <div className="space-y-3">
                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Transaction History</h3>
-                  {EARNINGS.map(e => (
+                  {earningsRows.length === 0 ? (
+                    <div className="bg-white p-10 rounded-2xl border border-gray-100 text-center text-gray-400 text-sm">No transactions yet. Completed, settled jobs appear here.</div>
+                  ) : (
+                    earningsRows.map((e) => (
                     <div key={e.id} className="bg-white p-4 rounded-2xl border border-gray-100 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"><Wallet className="w-5 h-5" /></div>
@@ -370,9 +426,10 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
                           <p className="text-[10px] text-gray-400">{e.date} • {e.status}</p>
                         </div>
                       </div>
-                      <p className="font-black text-emerald-600">+${e.amount}</p>
+                      <p className="font-black text-emerald-600">+${e.amount.toFixed(2)}</p>
                     </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </motion.div>
             )}
@@ -406,7 +463,11 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
               <motion.div key="profile" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <h2 className="text-2xl font-black">My Profile</h2>
                 <div className="bg-white p-8 rounded-3xl border border-gray-100 text-center space-y-4">
-                  <img src={provider.photo} className="w-20 h-20 rounded-2xl mx-auto border-4 border-emerald-100" />
+                  {provider.photo ? (
+                    <img src={provider.photo} alt="" className="w-20 h-20 rounded-2xl mx-auto border-4 border-emerald-100 object-cover" />
+                  ) : (
+                    <div className="w-20 h-20 rounded-2xl mx-auto border-4 border-emerald-100 bg-gray-100 flex items-center justify-center"><User className="w-10 h-10 text-gray-400" /></div>
+                  )}
                   <div>
                     <h3 className="text-xl font-black">{provider.name}</h3>
                     <p className="text-gray-400 text-sm">{provider.email}</p>
@@ -419,7 +480,7 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white p-5 rounded-2xl border border-gray-100 text-center">
                     <p className="text-[10px] font-bold text-gray-400 uppercase">Skills</p>
-                    <p className="font-bold mt-1">{provider.skills.join(', ')}</p>
+                    <p className="font-bold mt-1">{provider.skills.length ? provider.skills.join(', ') : '—'}</p>
                   </div>
                   <div className="bg-white p-5 rounded-2xl border border-gray-100 text-center">
                     <p className="text-[10px] font-bold text-gray-400 uppercase">Phone</p>
@@ -441,6 +502,98 @@ export default function ProviderApp({ onLogout }: { onLogout: () => void }) {
             )}
           </AnimatePresence>
         </div>
+      </main>
+    </div>
+  );
+}
+
+function ProviderPendingReview({
+  provider,
+  onLogout,
+}: {
+  provider: Provider;
+  onLogout: () => void;
+}) {
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <header className="px-6 py-4 flex items-center justify-between border-b border-gray-100 bg-white">
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 bg-accent rounded-xl flex items-center justify-center text-white">
+            <Heart className="w-4 h-4 fill-current" />
+          </div>
+          <span className="font-black tracking-tight">FamilyHubs Partners</span>
+        </div>
+        <button
+          onClick={onLogout}
+          className="text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-primary flex items-center gap-1.5"
+        >
+          Sign out <LogOut className="w-3.5 h-3.5" />
+        </button>
+      </header>
+
+      <main className="flex-1 flex items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-lg space-y-6"
+        >
+          <div className="uc-card p-8 text-center space-y-4">
+            <div className="w-16 h-16 bg-amber-50 border border-amber-100 rounded-2xl flex items-center justify-center mx-auto">
+              <Clock className="w-7 h-7 text-amber-600" />
+            </div>
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-amber-700 bg-amber-50 px-3 py-1 rounded-full">
+                Application under review
+              </span>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight">
+                Hi {provider.name.split(' ')[0] || 'there'}, you're almost in.
+              </h1>
+              <p className="text-gray-500 text-sm leading-relaxed">
+                Your application has been submitted to your hub. A hub admin will reach out
+                to verify your documents. Once approved, you'll see your dispatch queue
+                here automatically — no need to re-apply.
+              </p>
+            </div>
+          </div>
+
+          <div className="uc-card p-6 space-y-4">
+            <h3 className="text-sm font-black uppercase tracking-widest text-gray-400">What happens next</h3>
+            <ol className="space-y-3 text-sm">
+              <li className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-[11px] font-black shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </span>
+                <span>You created your account.</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center text-[11px] font-black shrink-0">2</span>
+                <span>The hub admin reviews your details and contacts you for documents.</span>
+              </li>
+              <li className="flex gap-3 text-gray-400">
+                <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-[11px] font-black shrink-0">3</span>
+                <span>You're verified. Jobs start appearing on this dashboard in real time.</span>
+              </li>
+            </ol>
+          </div>
+
+          {provider.skills.length > 0 && (
+            <div className="uc-card p-6 space-y-3">
+              <h3 className="text-sm font-black uppercase tracking-widest text-gray-400">Your application</h3>
+              <div className="flex flex-wrap gap-1.5">
+                {provider.skills.map((s, i) => (
+                  <span key={i} className="text-[10px] font-bold uppercase tracking-widest bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-lg text-gray-500">
+                    {s}
+                  </span>
+                ))}
+              </div>
+              {provider.phone && (
+                <p className="text-xs text-gray-500 flex items-center gap-2">
+                  <Phone className="w-3.5 h-3.5" /> {provider.phone}
+                </p>
+              )}
+            </div>
+          )}
+        </motion.div>
       </main>
     </div>
   );

@@ -3,7 +3,7 @@
  * Toast-based real-time notifications powered by Socket.io events.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Toaster, toast } from 'sonner';
 import { useSocket } from '../../context/SocketContext';
 
@@ -66,12 +66,29 @@ export function LiveSignalToaster() {
     };
   }, [socket]);
 
-  // Show connection status toast
+  // Only surface connection toasts after a reconnect — first connection on page
+  // load is silent so guests / users aren't greeted with an internal status pill.
+  const seenConnected = useRef(false);
+  const wasConnected = useRef(false);
   useEffect(() => {
-    if (isConnected) {
-      toast.success('Live Signal Active', {
-        description: 'Real-time sync engine connected.',
-        duration: 3000,
+    if (isConnected && !seenConnected.current) {
+      seenConnected.current = true;
+      wasConnected.current = true;
+      return;
+    }
+    if (!isConnected && wasConnected.current) {
+      wasConnected.current = false;
+      toast.warning('Reconnecting…', {
+        description: 'Live sync temporarily offline.',
+        duration: 2500,
+        id: 'connection-status',
+      });
+    }
+    if (isConnected && seenConnected.current && !wasConnected.current) {
+      wasConnected.current = true;
+      toast.success('Back online', {
+        description: 'Real-time sync resumed.',
+        duration: 2000,
         id: 'connection-status',
       });
     }
@@ -79,7 +96,7 @@ export function LiveSignalToaster() {
 
   return (
     <Toaster
-      position="top-right"
+      position="bottom-right"
       expand={false}
       richColors
       closeButton
