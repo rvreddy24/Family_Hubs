@@ -36,4 +36,4 @@ Email/password sign-in uses the same Auth REST endpoint as the web app. After si
 - **Active job:** step bar, instructions, safety code for `arrived`, advance action / `task:update`
 - Earnings and history from **settled** tasks in `state:sync` / live events
 
-Background push (FCM) is not bundled; see [../../docs/FCM.md](../../docs/FCM.md) and the optional `POST /api/push/device` stub in the server.
+Background push (FCM) is not bundled; use the optional `POST /api/push/device` stub in the server when you add Firebase.

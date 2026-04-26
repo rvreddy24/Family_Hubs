@@ -71,17 +71,15 @@ Family_Hubs/
 ├── scripts/                   # TS CLI smoke / maintenance (run with `npx tsx`)
 │   ├── seed-demo-accounts.ts
 │   ├── reset-state.ts
+│   ├── cleanup-test-users.ts
 │   ├── smoke-full-audit.ts
 │   ├── smoke-deep-audit.ts
 │   ├── smoke-chat.ts
 │   ├── smoke-security.ts
-│   ├── smoke-provider-apply.ts
-│   └── …
+│   └── smoke-provider-apply.ts
 │
 └── docs/
-    ├── realtime-contract.md
-    ├── VERIFICATION_CHECKLIST.md
-    └── FCM.md
+    └── realtime-contract.md
 ```
 
 ---
@@ -179,9 +177,7 @@ With `.env` populated and a running **or** production API, point **`VITE_API_URL
 ## Documentation
 
 - **`docs/realtime-contract.md`** — Socket/REST contract
-- **`docs/VERIFICATION_CHECKLIST.md`** — Manual multi-client checks
 - **`android/provider/README.md`** — Android provider app
-- **`PROJECT_REPORT.md`** — Project notes / roadmap (if present)
 
 ---
 

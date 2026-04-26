@@ -143,10 +143,10 @@ apiRouter.get('/wallet/:userId', async (req: Request, res: Response) => {
   });
 });
 
-/** Stub for future FCM / device token registration (see [docs/FCM.md](../../docs/FCM.md)) */
+/** Stub for future FCM / device token registration */
 apiRouter.post('/push/device', (req, res) => {
   return res.status(501).json({
-    message: 'Not implemented. Wire Firebase Admin or Edge Function; see docs/FCM.md',
+    message: 'Not implemented. Wire Firebase Admin or an Edge Function for device tokens.',
     received: { keys: Object.keys(req.body || {}) },
   });
 });
