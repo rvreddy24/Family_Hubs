@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import IdentityGuardModal from './components/admin/IdentityGuardModal';
 import ProviderApp from './components/provider/ProviderApp';
 import { ConnectionIndicator } from './components/ui/LiveSignalToaster';
@@ -70,7 +70,123 @@ import {
   Area
 } from 'recharts';
 import { MOCK_USER, MOCK_ADMIN, MOCK_PROVIDER_USER } from './constants';
-import { ServiceCategory, User as UserType } from './types';
+import { toast } from 'sonner';
+import { FamilyVaultDocument, ServiceCategory, User as UserType } from './types';
+
+const PROFILE_PHOTO_MAX_BYTES = 8 * 1024 * 1024;
+const VAULT_FILE_MAX_BYTES = 10 * 1024 * 1024;
+const VAULT_MAX_FILES = 12;
+
+function FamilyDocumentVaultCard({
+  parent,
+  onAddDocument,
+  onRemoveDocument,
+}: {
+  parent: { id: string; vaultDocuments?: FamilyVaultDocument[] } | undefined;
+  onAddDocument: (doc: FamilyVaultDocument) => void;
+  onRemoveDocument: (docId: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const docs = parent?.vaultDocuments ?? [];
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !parent) return;
+    if (file.size > VAULT_FILE_MAX_BYTES) {
+      alert(`Please choose a file under ${VAULT_FILE_MAX_BYTES / 1024 / 1024} MB.`);
+      return;
+    }
+    if (docs.length >= VAULT_MAX_FILES) {
+      alert(`You can store up to ${VAULT_MAX_FILES} documents. Remove one to add another.`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return;
+      onAddDocument({
+        id: `vault_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        name: file.name.slice(0, 120),
+        mimeType: file.type || 'application/octet-stream',
+        dataUrl: reader.result,
+        uploadedAt: new Date().toISOString(),
+      });
+    };
+    reader.onerror = () => alert('Could not read that file. Try a different file.');
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="uc-card p-6 border-dashed border-2 border-gray-100 bg-white/50 group hover:border-accent/40 transition-all">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 bg-gray-50 text-gray-400 group-hover:bg-accent group-hover:text-white rounded-xl flex items-center justify-center transition-all">
+          <Camera className="w-5 h-5" />
+        </div>
+        <div>
+          <h4 className="text-sm font-bold text-primary">Document Vault</h4>
+          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Prescriptions • Reports</p>
+        </div>
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,.pdf,application/pdf"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+      <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto no-scrollbar pr-0.5">
+        <button
+          type="button"
+          disabled={!parent}
+          title={parent ? 'Upload a prescription or report' : 'Select a family profile first'}
+          onClick={() => parent && fileInputRef.current?.click()}
+          className="aspect-[3/4] bg-gray-50 rounded-lg border border-gray-100 p-2 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer hover:bg-accent/5 hover:border-accent/30 transition-colors shrink-0"
+        >
+          <div className="w-full h-full border border-dashed border-gray-200 rounded flex flex-col items-center justify-center gap-1 text-center px-1">
+            <Plus className="w-4 h-4 text-gray-400" />
+            <span className="text-[8px] font-bold text-gray-400 uppercase leading-tight">Add file</span>
+          </div>
+        </button>
+        {docs.map((d) => {
+          const isImage = d.mimeType.startsWith('image/');
+          return (
+            <div
+              key={d.id}
+              className="aspect-[3/4] rounded-lg border border-gray-100 p-1 relative overflow-hidden bg-white shrink-0"
+            >
+              {isImage ? (
+                <img src={d.dataUrl} alt="" className="w-full h-full object-cover rounded-md" />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center bg-blue-50 rounded-md">
+                  <FileText className="w-6 h-6 text-blue-600 mb-1" />
+                  <p className="text-[8px] font-black text-blue-600 text-center px-1 line-clamp-3 break-all">{d.name}</p>
+                </div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 flex gap-0.5 p-1 bg-black/55 backdrop-blur-[2px]">
+                <a
+                  href={d.dataUrl}
+                  download={d.name}
+                  className="flex-1 text-center text-[8px] font-black text-white bg-accent rounded py-1 hover:bg-blue-700"
+                >
+                  Save
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('Remove this document from the vault?')) onRemoveDocument(d.id);
+                  }}
+                  className="flex-1 text-center text-[8px] font-black text-white bg-red-600 rounded py-1 hover:bg-red-700"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // --- Components ---
 
@@ -1303,7 +1419,7 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                     </div>
                     <div className="space-y-4">
                       {activeTasks.map(task => (
-                        <div key={task.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 p-5 bg-gray-50 rounded-2xl border border-gray-100 group hover:border-accent transition-all cursor-pointer">
+                        <div key={task.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 p-5 bg-gray-50 rounded-2xl border border-gray-100 group hover:border-accent transition-all">
                           <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center flex-shrink-0 group-hover:bg-accent group-hover:text-white transition-all">
                             {task.category === 'medical' ? <Stethoscope className="w-6 h-6" /> : <ShoppingBag className="w-6 h-6" />}
                           </div>
@@ -1837,13 +1953,23 @@ const AdminDashboard = ({ hubId, tasks, setTasks, hubs, setHubs, onLogout }: { h
                 </div>
               </div>
 
-              <div className="uc-card p-6 border-dashed border-2 border-gray-200 bg-white flex items-center gap-4 group cursor-pointer hover:border-accent hover:bg-gray-50 transition-all">
-                 <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 group-hover:text-accent transition-colors"><Settings className="w-6 h-6" /></div>
-                 <div>
-                    <h5 className="font-bold text-sm">System Protocols</h5>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Configure Hub Settings</p>
-                 </div>
-              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  toast.info('Hub protocol templates and escalation rules are managed in your ops console.', {
+                    duration: 5000,
+                  })
+                }
+                className="uc-card w-full text-left p-6 border-dashed border-2 border-gray-200 bg-white flex items-center gap-4 group cursor-pointer hover:border-accent hover:bg-gray-50 transition-all"
+              >
+                <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 group-hover:text-accent transition-colors">
+                  <Settings className="w-6 h-6" />
+                </div>
+                <div>
+                  <h5 className="font-bold text-sm">System Protocols</h5>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Configure Hub Settings</p>
+                </div>
+              </button>
             </div>
           </div>
         </div>
@@ -2442,28 +2568,21 @@ export default function App() {
 
               <FamilyNoticeboardCard notes={notes} onPost={postNote} userImage={user.profileImage} />
 
-              <div className="uc-card p-6 border-dashed border-2 border-gray-100 bg-white/50 group hover:border-accent/40 transition-all cursor-pointer">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-gray-50 text-gray-400 group-hover:bg-accent group-hover:text-white rounded-xl flex items-center justify-center transition-all">
-                    <Camera className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-primary">Document Vault</h4>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Prescriptions • Reports</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="aspect-[3/4] bg-gray-50 rounded-lg border border-gray-100 p-2 flex items-center justify-center">
-                    <div className="w-full h-full border border-dashed border-gray-200 rounded flex items-center justify-center">
-                      <Plus className="w-4 h-4 text-gray-300" />
-                    </div>
-                  </div>
-                  <div className="aspect-[3/4] bg-blue-50 rounded-lg border border-blue-100 p-2 flex flex-col items-center justify-center">
-                    <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-white text-[8px] mb-1 font-bold">PDF</div>
-                    <p className="text-[8px] font-black text-blue-600 text-center">DR_RAO_MAR_25</p>
-                  </div>
-                </div>
-              </div>
+              <FamilyDocumentVaultCard
+                parent={parents.find(p => p.id === selectedParentId)}
+                onAddDocument={(doc) => {
+                  const p = parents.find(x => x.id === selectedParentId);
+                  if (!p) return;
+                  const existing = p.vaultDocuments ?? [];
+                  patchParent(p.id, { vaultDocuments: [...existing, doc] });
+                }}
+                onRemoveDocument={(docId) => {
+                  const p = parents.find(x => x.id === selectedParentId);
+                  if (!p) return;
+                  const existing = p.vaultDocuments ?? [];
+                  patchParent(p.id, { vaultDocuments: existing.filter(d => d.id !== docId) });
+                }}
+              />
             </div>
 
             {notes.length > 0 && (
@@ -2544,28 +2663,21 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="uc-card p-6 border-dashed border-2 border-gray-100 bg-white/50 group hover:border-accent/40 transition-all cursor-pointer">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 bg-gray-50 text-gray-400 group-hover:bg-accent group-hover:text-white rounded-xl flex items-center justify-center transition-all">
-                      <Camera className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-primary">Document Vault</h4>
-                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Prescriptions • Reports</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="aspect-[3/4] bg-gray-50 rounded-lg border border-gray-100 p-2 flex items-center justify-center">
-                      <div className="w-full h-full border border-dashed border-gray-200 rounded flex items-center justify-center">
-                        <Plus className="w-4 h-4 text-gray-300" />
-                      </div>
-                    </div>
-                    <div className="aspect-[3/4] bg-blue-50 rounded-lg border border-blue-100 p-2 flex flex-col items-center justify-center">
-                      <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-white text-[8px] mb-1 font-bold">PDF</div>
-                      <p className="text-[8px] font-black text-blue-600 text-center">DR_RAO_MAR_25</p>
-                    </div>
-                  </div>
-                </div>
+                <FamilyDocumentVaultCard
+                  parent={parents.find(p => p.id === selectedParentId)}
+                  onAddDocument={(doc) => {
+                    const p = parents.find(x => x.id === selectedParentId);
+                    if (!p) return;
+                    const existing = p.vaultDocuments ?? [];
+                    patchParent(p.id, { vaultDocuments: [...existing, doc] });
+                  }}
+                  onRemoveDocument={(docId) => {
+                    const p = parents.find(x => x.id === selectedParentId);
+                    if (!p) return;
+                    const existing = p.vaultDocuments ?? [];
+                    patchParent(p.id, { vaultDocuments: existing.filter(d => d.id !== docId) });
+                  }}
+                />
 
                 <div className="uc-card p-0 overflow-hidden relative aspect-square bg-gray-100 group">
                   <img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&q=80&w=600" className="w-full h-full object-cover grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-700" />
@@ -2976,7 +3088,7 @@ export default function App() {
                 <motion.div 
                   key={res.id}
                   whileHover={{ y: -4 }}
-                  className="uc-card p-6 group cursor-pointer border-gray-50 hover:border-accent/10"
+                  className="uc-card p-6 group border-gray-50 hover:border-accent/10"
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-sm group-hover:scale-110 group-hover:-rotate-3 ${
@@ -3304,8 +3416,8 @@ export default function App() {
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
-                        if (file.size > 2 * 1024 * 1024) {
-                          alert('Please choose an image under 2 MB.');
+                        if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+                          alert(`Please choose an image under ${PROFILE_PHOTO_MAX_BYTES / 1024 / 1024} MB.`);
                           return;
                         }
                         const reader = new FileReader();

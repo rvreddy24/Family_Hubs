@@ -70,6 +70,15 @@ export interface Hub {
   revenue: number;
 }
 
+/** Prescription / report files stored per care recipient (data URLs until Storage is wired). */
+export interface FamilyVaultDocument {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+  uploadedAt: string;
+}
+
 export interface Parent {
   id: string;
   name: string;
@@ -93,6 +102,8 @@ export interface Parent {
     glucose: string;
     lastUpdated: string;
   };
+  /** Family-uploaded prescriptions and reports (vault UI). */
+  vaultDocuments?: FamilyVaultDocument[];
 }
 
 export interface ServiceTask {

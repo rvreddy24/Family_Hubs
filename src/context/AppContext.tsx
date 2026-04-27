@@ -489,17 +489,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (existing) return prev.map(p => (p.id === id ? { ...p, ...withMeta } : p));
         return [...prev, withMeta];
       });
-      if (socket && isConnected) {
+      if (socket) {
         socket.emit('parent:create', withMeta);
       }
     },
-    [socket, isConnected, user.hubId, user.id]
+    [socket, user.hubId, user.id]
   );
 
   const patchParent = useCallback(
     (id: string, patch: Record<string, any>) => {
       setParents(prev => prev.map(p => (p.id === id ? { ...p, ...patch } : p)));
-      if (socket && isConnected) {
+      // Emit whenever a socket exists — client buffers while disconnected (reconnect flush).
+      if (socket) {
         socket.emit('parent:update', {
           id,
           patch,
@@ -507,18 +508,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    [socket, isConnected, user.hubId]
+    [socket, user.hubId]
   );
 
   const deleteParent = useCallback(
     (id: string) => {
       if (!confirm('Delete this family profile? Active jobs will keep referencing it.')) return;
       setParents(prev => prev.filter(p => p.id !== id));
-      if (socket && isConnected) {
+      if (socket) {
         socket.emit('parent:delete', { id, hubId: user.hubId || DEFAULT_HUB });
       }
     },
-    [socket, isConnected, user.hubId]
+    [socket, user.hubId]
   );
 
   const upsertProvider = useCallback(
