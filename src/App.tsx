@@ -2520,10 +2520,20 @@ export default function App() {
                       </div>
                       <div className="flex gap-2">
                         <button 
+                          type="button"
                           onClick={(e) => { e.stopPropagation(); setEditingParentId(p.id); setView('edit-parent'); }}
                           className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${selectedParentId === p.id ? 'bg-white/10 hover:bg-accent' : 'bg-white hover:bg-gray-100'}`}
+                          title="Edit profile"
                         >
                           <Edit2 className={`w-5 h-5 ${selectedParentId === p.id ? 'text-white' : 'text-primary'}`} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); deleteParent(p.id); }}
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${selectedParentId === p.id ? 'bg-white/10 hover:bg-red-600' : 'bg-white hover:bg-red-50'}`}
+                          title="Delete profile"
+                        >
+                          <Trash2 className={`w-5 h-5 ${selectedParentId === p.id ? 'text-white' : 'text-red-600'}`} />
                         </button>
                       </div>
                     </div>
