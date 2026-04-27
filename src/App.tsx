@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent, type FormEvent, type SetStateAction } from 'react';
 import IdentityGuardModal from './components/admin/IdentityGuardModal';
 import ProviderApp from './components/provider/ProviderApp';
 import { ConnectionIndicator } from './components/ui/LiveSignalToaster';
@@ -87,12 +87,12 @@ function FamilyDocumentVaultCard({
   onRemoveDocument: (docId: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
+  const [dropActive, setDropActive] = useState(false);
   const docs = parent?.vaultDocuments ?? [];
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file || !parent) return;
+  const ingestFile = (file: File) => {
+    if (!parent) return;
     if (file.size > VAULT_FILE_MAX_BYTES) {
       alert(`Please choose a file under ${VAULT_FILE_MAX_BYTES / 1024 / 1024} MB.`);
       return;
@@ -116,6 +116,47 @@ function FamilyDocumentVaultCard({
     reader.readAsDataURL(file);
   };
 
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    ingestFile(file);
+  };
+
+  const handleDropZoneDragEnter = (e: DragEvent) => {
+    if (!parent) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current += 1;
+    setDropActive(true);
+  };
+
+  const handleDropZoneDragLeave = (e: DragEvent) => {
+    if (!parent) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDropActive(false);
+  };
+
+  const handleDropZoneDragOver = (e: DragEvent) => {
+    if (!parent) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDropZoneDrop = (e: DragEvent) => {
+    if (!parent) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setDropActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    ingestFile(file);
+  };
+
   return (
     <div className="uc-card p-6 border-dashed border-2 border-gray-100 bg-white/50 group hover:border-accent/40 transition-all">
       <div className="flex items-center gap-3 mb-4">
@@ -127,6 +168,11 @@ function FamilyDocumentVaultCard({
           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Prescriptions • Reports</p>
         </div>
       </div>
+      {!parent && (
+        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3 leading-snug">
+          Select a family profile in the care roster first — then you can add prescriptions and reports here.
+        </p>
+      )}
       <input
         ref={fileInputRef}
         type="file"
@@ -138,13 +184,24 @@ function FamilyDocumentVaultCard({
         <button
           type="button"
           disabled={!parent}
-          title={parent ? 'Upload a prescription or report' : 'Select a family profile first'}
+          title={parent ? 'Click or drop a prescription or report (images or PDF)' : 'Select a family profile first'}
           onClick={() => parent && fileInputRef.current?.click()}
-          className="aspect-[3/4] bg-gray-50 rounded-lg border border-gray-100 p-2 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer hover:bg-accent/5 hover:border-accent/30 transition-colors shrink-0"
+          onDragEnter={handleDropZoneDragEnter}
+          onDragLeave={handleDropZoneDragLeave}
+          onDragOver={handleDropZoneDragOver}
+          onDrop={handleDropZoneDrop}
+          className={`aspect-[3/4] bg-gray-50 rounded-lg border p-2 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer hover:bg-accent/5 transition-colors shrink-0 ${
+            dropActive && parent ? 'border-accent ring-2 ring-accent/30 bg-accent/5' : 'border-gray-100 hover:border-accent/30'
+          }`}
         >
-          <div className="w-full h-full border border-dashed border-gray-200 rounded flex flex-col items-center justify-center gap-1 text-center px-1">
+          <div className="w-full h-full border border-dashed border-gray-200 rounded flex flex-col items-center justify-center gap-1 text-center px-1 pointer-events-none">
             <Plus className="w-4 h-4 text-gray-400" />
             <span className="text-[8px] font-bold text-gray-400 uppercase leading-tight">Add file</span>
+            {parent && (
+              <span className="text-[7px] font-semibold text-gray-400 normal-case tracking-normal leading-tight px-0.5">
+                Click or drop
+              </span>
+            )}
           </div>
         </button>
         {docs.map((d) => {
