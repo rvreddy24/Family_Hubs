@@ -2459,9 +2459,12 @@ export default function App() {
             {/* Contextual Header & Stats Row */}
             <div className="flex flex-col lg:flex-row gap-6 items-start lg:items-center justify-between">
               <div className="space-y-1">
-                <h2 className="text-3xl md:text-4xl font-black tracking-tight">Control Center</h2>
+                <h2 className="text-3xl md:text-4xl font-black tracking-tight">Family dashboard</h2>
                 <p className="text-gray-400 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
                   <MapPin className="w-3.5 h-3.5 text-accent" /> {childHub.name}{childHub.city && childHub.city !== '—' ? ` · ${childHub.city}` : ''}
+                </p>
+                <p className="text-sm text-gray-500 font-medium normal-case pt-1 max-w-xl">
+                  Pick a profile, then manage bookings, wallet, and verification in one place.
                 </p>
               </div>
               {logs.length > 0 && (
@@ -2486,7 +2489,7 @@ export default function App() {
             </div>
 
             {/* My Parents - Horizontal Scroll */}
-            <div className="space-y-4">
+            <div className="space-y-4 pb-8 border-b border-gray-100">
               <div className="flex items-center justify-between">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">My Family Profiles</h3>
                 <button 
@@ -2567,112 +2570,11 @@ export default function App() {
               </div>
             </div>
 
-            {/* Quick Actions Section */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {/* Regional Node Status - Special for Kids */}
-              <div className="uc-card p-6 bg-primary text-white border-none shadow-xl relative overflow-hidden group">
-                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                   <Target className="w-20 h-20" />
-                 </div>
-                 <div className="relative z-10 space-y-4">
-                    <div className="flex items-center gap-3">
-                       <div className="w-10 h-10 bg-accent text-white rounded-xl flex items-center justify-center">
-                          <Activity className="w-5 h-5" />
-                       </div>
-                       <div>
-                          <h4 className="font-bold">Local coverage</h4>
-                          <p className="text-[9px] text-white/50 font-black uppercase tracking-widest">{childHub.name}</p>
-                       </div>
-                    </div>
-                    <div className="space-y-4 pt-2">
-                       <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-white/60">Network providers (hub)</span>
-                          <span className="text-[10px] font-black">{childHub.totalProviders} registered</span>
-                       </div>
-                       <div className="flex -space-x-2">
-                          {providers.slice(0, 5).map((p) => (
-                            p.photo ? (
-                              <img key={p.id} src={p.photo} alt="" className="w-6 h-6 rounded-full border-2 border-primary object-cover" />
-                            ) : (
-                              <div key={p.id} className="w-6 h-6 rounded-full border-2 border-primary bg-white/20 flex items-center justify-center">
-                                <User className="w-3.5 h-3.5 text-white/80" />
-                              </div>
-                            )
-                          ))}
-                          {providers.length === 0 && (
-                            <span className="text-[10px] text-white/50 pl-1">—</span>
-                          )}
-                       </div>
-                       <p className="text-[10px] text-white/40 leading-tight">Verified providers in your hub appear here. Add active jobs in admin to build local response capacity.</p>
-                    </div>
-                 </div>
-              </div>
-
-              <div className="uc-card p-6 bg-emerald-50 border-emerald-100 shadow-sm relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                  <Pill className="w-20 h-20 text-emerald-600" />
-                </div>
-                <div className="relative z-10 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center shadow-lg">
-                      <Calendar className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-emerald-900 leading-tight">Medicine Schedule</h4>
-                      <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-tighter">Automatic Refills</p>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <p className="text-sm text-emerald-800/80 p-3 bg-white/60 rounded-xl border border-emerald-100/50">
-                      No linked prescriptions. When your care plan and pharmacy are connected, schedules will show here.
-                    </p>
-                  </div>
-                  <button type="button" className="w-full py-3 bg-emerald-600/50 text-white rounded-xl font-bold text-xs cursor-not-allowed" disabled>
-                    Connect care plan
-                  </button>
-                </div>
-              </div>
-
-              <FamilyNoticeboardCard notes={notes} onPost={postNote} userImage={user.profileImage} />
-
-              <FamilyDocumentVaultCard
-                parent={parents.find(p => p.id === selectedParentId)}
-                onAddDocument={(doc) => {
-                  const p = parents.find(x => x.id === selectedParentId);
-                  if (!p) return;
-                  const existing = p.vaultDocuments ?? [];
-                  patchParent(p.id, { vaultDocuments: [...existing, doc] });
-                }}
-                onRemoveDocument={(docId) => {
-                  const p = parents.find(x => x.id === selectedParentId);
-                  if (!p) return;
-                  const existing = p.vaultDocuments ?? [];
-                  patchParent(p.id, { vaultDocuments: existing.filter(d => d.id !== docId) });
-                }}
-              />
+            {/* Care & jobs first: bookings + wallet + safety, with detail panel */}
+            <div className="mb-2">
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Care & jobs</h3>
+              <p className="text-sm text-gray-500 mt-1">Live bookings, funds, and verification — select a job on the left to open details.</p>
             </div>
-
-            {notes.length > 0 && (
-              <div className="uc-card p-6 bg-white border-gray-100 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 flex items-center gap-2">
-                    <MessageSquare className="w-3.5 h-3.5 text-accent" /> Recent family notes
-                  </h3>
-                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">{notes.length} entries</span>
-                </div>
-                <div className="space-y-3 max-h-72 overflow-y-auto no-scrollbar">
-                  {notes.slice(0, 20).map(n => (
-                    <div key={n.id} className="p-3 bg-gray-50 border border-gray-100 rounded-2xl">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{n.authorName} <span className="text-gray-300">·</span> <span className="text-accent">{n.authorRole}</span></p>
-                        <p className="text-[9px] font-bold text-gray-400">{new Date(n.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
-                      </div>
-                      <p className="text-sm text-primary leading-relaxed whitespace-pre-wrap">{n.body}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Main Task Area - Horizontal Split */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -2729,22 +2631,6 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-
-                <FamilyDocumentVaultCard
-                  parent={parents.find(p => p.id === selectedParentId)}
-                  onAddDocument={(doc) => {
-                    const p = parents.find(x => x.id === selectedParentId);
-                    if (!p) return;
-                    const existing = p.vaultDocuments ?? [];
-                    patchParent(p.id, { vaultDocuments: [...existing, doc] });
-                  }}
-                  onRemoveDocument={(docId) => {
-                    const p = parents.find(x => x.id === selectedParentId);
-                    if (!p) return;
-                    const existing = p.vaultDocuments ?? [];
-                    patchParent(p.id, { vaultDocuments: existing.filter(d => d.id !== docId) });
-                  }}
-                />
 
                 <div className="uc-card p-0 overflow-hidden relative aspect-square bg-gray-100 group">
                   <img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&q=80&w=600" className="w-full h-full object-cover grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-700" />
@@ -2971,13 +2857,125 @@ export default function App() {
                       <div className="w-20 h-20 bg-gray-50 rounded-3xl flex items-center justify-center rotate-3">
                         <History className="w-10 h-10 text-gray-200" />
                       </div>
-                      <h5 className="text-lg font-bold mt-6">Select Activity</h5>
-                      <p className="text-gray-400 text-sm mt-2 max-w-[200px]">Click any card on the left to see live photos and manager updates.</p>
+                      <h5 className="text-lg font-bold mt-6">Select a booking</h5>
+                      <p className="text-gray-400 text-sm mt-2 max-w-[220px]">Choose a job under Live Services to see verification, photos, and timeline.</p>
                     </div>
                   )}
                 </div>
               </div>
             </div>
+
+            {/* Hub coverage, prescriptions, team notes & vault — after primary workflow */}
+            <div className="space-y-4 mt-10 pt-10 border-t border-gray-100">
+              <div>
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Hub services & family records</h3>
+                <p className="text-sm text-gray-500 mt-1">Local network, medicine plans, noticeboard, and documents for the selected profile.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                <div className="uc-card p-6 bg-primary text-white border-none shadow-xl relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                    <Target className="w-20 h-20" />
+                  </div>
+                  <div className="relative z-10 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-accent text-white rounded-xl flex items-center justify-center">
+                        <Activity className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold">Local coverage</h4>
+                        <p className="text-[9px] text-white/50 font-black uppercase tracking-widest">{childHub.name}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-4 pt-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-white/60">Network providers (hub)</span>
+                        <span className="text-[10px] font-black">{childHub.totalProviders} registered</span>
+                      </div>
+                      <div className="flex -space-x-2">
+                        {providers.slice(0, 5).map((prov) =>
+                          prov.photo ? (
+                            <img key={prov.id} src={prov.photo} alt="" className="w-6 h-6 rounded-full border-2 border-primary object-cover" />
+                          ) : (
+                            <div key={prov.id} className="w-6 h-6 rounded-full border-2 border-primary bg-white/20 flex items-center justify-center">
+                              <User className="w-3.5 h-3.5 text-white/80" />
+                            </div>
+                          )
+                        )}
+                        {providers.length === 0 && <span className="text-[10px] text-white/50 pl-1">—</span>}
+                      </div>
+                      <p className="text-[10px] text-white/40 leading-tight">Verified providers in your hub appear here. Add active jobs in admin to build local response capacity.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="uc-card p-6 bg-emerald-50 border-emerald-100 shadow-sm relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                    <Pill className="w-20 h-20 text-emerald-600" />
+                  </div>
+                  <div className="relative z-10 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center shadow-lg">
+                        <Calendar className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-emerald-900 leading-tight">Medicine Schedule</h4>
+                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-tighter">Automatic Refills</p>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-sm text-emerald-800/80 p-3 bg-white/60 rounded-xl border border-emerald-100/50">
+                        No linked prescriptions. When your care plan and pharmacy are connected, schedules will show here.
+                      </p>
+                    </div>
+                    <button type="button" className="w-full py-3 bg-emerald-600/50 text-white rounded-xl font-bold text-xs cursor-not-allowed" disabled>
+                      Connect care plan
+                    </button>
+                  </div>
+                </div>
+
+                <FamilyNoticeboardCard notes={notes} onPost={postNote} userImage={user.profileImage} />
+
+                <FamilyDocumentVaultCard
+                  parent={parents.find((pr) => pr.id === selectedParentId)}
+                  onAddDocument={(doc) => {
+                    const par = parents.find((x) => x.id === selectedParentId);
+                    if (!par) return;
+                    const existing = par.vaultDocuments ?? [];
+                    patchParent(par.id, { vaultDocuments: [...existing, doc] });
+                  }}
+                  onRemoveDocument={(docId) => {
+                    const par = parents.find((x) => x.id === selectedParentId);
+                    if (!par) return;
+                    const existing = par.vaultDocuments ?? [];
+                    patchParent(par.id, { vaultDocuments: existing.filter((d) => d.id !== docId) });
+                  }}
+                />
+              </div>
+            </div>
+
+            {notes.length > 0 && (
+              <div className="uc-card p-6 bg-white border-gray-100 space-y-4 mt-8">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-accent" /> Recent family notes
+                  </h3>
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">{notes.length} entries</span>
+                </div>
+                <div className="space-y-3 max-h-72 overflow-y-auto no-scrollbar">
+                  {notes.slice(0, 20).map((n) => (
+                    <div key={n.id} className="p-3 bg-gray-50 border border-gray-100 rounded-2xl">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                          {n.authorName} <span className="text-gray-300">·</span> <span className="text-accent">{n.authorRole}</span>
+                        </p>
+                        <p className="text-[9px] font-bold text-gray-400">{new Date(n.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                      </div>
+                      <p className="text-sm text-primary leading-relaxed whitespace-pre-wrap">{n.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
 
