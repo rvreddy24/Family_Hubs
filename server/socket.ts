@@ -76,11 +76,17 @@ export function setupSocketHandlers(io: SocketIOServer) {
   io.on('connection', (socket: Socket) => {
     const clientId = socket.id;
     console.log(`[Socket] Client connected: ${clientId}`);
+    // #region agent log
+    fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H1',location:'server/socket.ts:connection',message:'socket connection',data:{socketId:clientId,hasAuthToken:!!(socket.handshake as any)?.auth?.token},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
 
     // --- Join role + hub + per-user rooms; receive authoritative state ---
     socket.on(
       'join:room',
       (data: { role: string; hubId?: string; userId?: string }) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H3',location:'server/socket.ts:join:room',message:'join:room received',data:{socketId:socket.id,role:String(data?.role||''),hasHubId:!!data?.hubId,hasUserId:!!data?.userId},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         socket.join(data.role);
         if (data.hubId) {
           socket.join(`hub:${data.hubId}`);
@@ -110,11 +116,18 @@ export function setupSocketHandlers(io: SocketIOServer) {
         );
 
         socket.emit('state:sync', getFullSnapshot());
+        // #region agent log
+        const snap = getFullSnapshot();
+        fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H3',location:'server/socket.ts:state:sync',message:'state:sync emitted',data:{socketId:socket.id,tasksCount:Array.isArray((snap as any)?.tasks)?(snap as any).tasks.length:null,hubsCount:Array.isArray((snap as any)?.hubs)?(snap as any).hubs.length:null,providersCount:Array.isArray((snap as any)?.providers)?(snap as any).providers.length:null},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
 
         if (userId) {
           const wallet = getWallet(userId);
           const transactions = getTxnsForUser(userId);
           socket.emit('wallet:sync', { wallet, transactions });
+          // #region agent log
+          fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H5',location:'server/socket.ts:wallet:sync',message:'wallet:sync emitted',data:{socketId:socket.id,txnsCount:Array.isArray(transactions)?transactions.length:null},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
         }
 
         // Send chat snapshot. Admins get the full hub inbox; everyone else gets their
@@ -560,6 +573,9 @@ export function setupSocketHandlers(io: SocketIOServer) {
         const messages = getChatMessagesForThread(thread.id);
         socket.emit('chat:history', { threadId: thread.id, messages });
         socket.emit('chat:thread:upserted', thread);
+        // #region agent log
+        fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H5',location:'server/socket.ts:chat:history',message:'chat:history emitted',data:{socketId:socket.id,threadId:thread.id,messagesCount:Array.isArray(messages)?messages.length:null},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       }
     );
 

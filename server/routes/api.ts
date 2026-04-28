@@ -23,6 +23,28 @@ import { providersRouter } from './providers';
 
 export const apiRouter = Router();
 
+// Debug-only log forwarder so browser code can emit runtime evidence without CORS issues.
+// It forwards *non-sensitive* diagnostics to the local debug ingest endpoint.
+apiRouter.post('/__debug/log', (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const body = (req.body || {}) as Record<string, any>;
+  const safe = {
+    sessionId: '5a9e75',
+    runId: String(body.runId || 'baseline'),
+    hypothesisId: String(body.hypothesisId || 'H?'),
+    location: String(body.location || 'browser'),
+    message: String(body.message || 'log'),
+    data: typeof body.data === 'object' && body.data ? body.data : {},
+    timestamp: typeof body.timestamp === 'number' ? body.timestamp : Date.now(),
+  };
+  // #region agent log
+  fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify(safe)}).catch(()=>{});
+  // #endregion
+  return res.status(204).end();
+});
+
 /**
  * Public snapshot — used by marketing landing pages and as the unauthenticated
  * seed for the React app before Socket.io joins (which then re-syncs full data).
@@ -59,6 +81,9 @@ apiRouter.get('/state', (_req, res) => {
 });
 
 apiRouter.get('/status', (_req, res) => {
+  // #region agent log
+  fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H2',location:'server/routes/api.ts:/status',message:'GET /api/status',data:{ok:true},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   return res.json({
     service: 'FamilyHubs.in API',
     version: '1.0.0',

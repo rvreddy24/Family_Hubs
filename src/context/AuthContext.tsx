@@ -56,12 +56,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      // #region agent log
+      fetch('/api/__debug/log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'baseline',hypothesisId:'H1',location:'src/context/AuthContext.tsx:62',message:'Auth getSession resolved',data:{hasSession:!!data.session,hasAccessToken:!!data.session?.access_token,userId:data.session?.user?.id? '(set)':null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       setIsReady(true);
     });
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
+      // #region agent log
+      fetch('/api/__debug/log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'baseline',hypothesisId:'H1',location:'src/context/AuthContext.tsx:70',message:'Auth state change',data:{event:String(_event||''),hasSession:!!next,hasAccessToken:!!next?.access_token,userId:next?.user?.id? '(set)':null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
     });
     return () => subscription.unsubscribe();
   }, []);

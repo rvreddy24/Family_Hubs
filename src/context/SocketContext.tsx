@@ -40,6 +40,9 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
+    // #region agent log
+    fetch('/api/__debug/log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'baseline',hypothesisId:'H1',location:'src/context/SocketContext.tsx:45',message:'Socket init',data:{socketUrl:SOCKET_URL,isSupabaseConfigured,hasAccessToken:!!accessToken},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     const s = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -51,6 +54,9 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     setSocket(s);
     s.on('connect', () => {
       console.log('[FamilyHubs] Real-time engine connected:', s.id);
+      // #region agent log
+      fetch('/api/__debug/log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'baseline',hypothesisId:'H1',location:'src/context/SocketContext.tsx:58',message:'Socket connected',data:{socketId:s.id ?? null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       setIsConnected(true);
     });
     s.on('disconnect', reason => {
@@ -59,6 +65,9 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     });
     s.on('connect_error', err => {
       console.warn('[FamilyHubs] Connection error:', err.message);
+      // #region agent log
+      fetch('/api/__debug/log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'baseline',hypothesisId:'H1',location:'src/context/SocketContext.tsx:68',message:'Socket connect_error',data:{message:String(err?.message||''),name:String((err as any)?.name||''),description:String((err as any)?.description||''),context:String((err as any)?.context||'')},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       setIsConnected(false);
     });
     s.on('notification:push', (notification: Notification) => {

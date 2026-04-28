@@ -106,6 +106,9 @@ if (IS_PRODUCTION) {
 // --- Start ---
 const start = async () => {
   try {
+    // #region agent log
+    fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H2',location:'server/index.ts:112',message:'Server start config',data:{port:PORT,isProduction:IS_PRODUCTION,clientUrl:CLIENT_URL,extraOriginsCount:EXTRA_ORIGINS.length,persistenceEnabled:isPersistenceEnabled(),strictSocketAuth:process.env.STRICT_SOCKET_AUTH==='1',supabaseConfigured:!!(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     await hydrateFromDatabase();
     if (isPersistenceEnabled()) {
       await persistState();

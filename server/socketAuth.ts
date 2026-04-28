@@ -18,17 +18,26 @@ export function attachSocketAuth(io: Server) {
 
   io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token as string | undefined;
+    // #region agent log
+    fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H1',location:'server/socketAuth.ts:23',message:'Socket auth middleware',data:{strict,hasToken:!!token},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!token) {
       return next();
     }
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data.user) {
+      // #region agent log
+      fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H1',location:'server/socketAuth.ts:31',message:'Socket auth failed',data:{strict,hasUser:false,errorMsg:String(error?.message||'')},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (strict) {
         return next(new Error('Unauthorized'));
       }
       return next();
     }
     (socket.data as { familyHubsUser?: User }).familyHubsUser = data.user;
+    // #region agent log
+    fetch('http://127.0.0.1:7598/ingest/cb2fe1b3-4802-4408-9788-1811b0db491c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5a9e75'},body:JSON.stringify({sessionId:'5a9e75',runId:'baseline',hypothesisId:'H1',location:'server/socketAuth.ts:41',message:'Socket auth ok',data:{hasUser:true,role:String(((data.user?.app_metadata as any)?.role)||'')},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return next();
   });
 }
