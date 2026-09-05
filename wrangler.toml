@@ -6,6 +6,13 @@ compatibility_flags = ["nodejs_compat"]
 # Keep the free *.workers.dev URL enabled.
 workers_dev = true
 
+# Custom domains (zone must be in the deploying Cloudflare account).
+# DNS records + TLS certs are provisioned automatically.
+routes = [
+  { pattern = "familyhubs.in", custom_domain = true },
+  { pattern = "www.familyhubs.in", custom_domain = true },
+]
+
 # Cloudflare Workers AI — used to embed memories (free daily allocation).
 [ai]
 binding = "AI"
