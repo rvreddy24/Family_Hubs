@@ -1,0 +1,21 @@
+name = "recall"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare Workers AI — used to embed memories (free daily allocation).
+[ai]
+binding = "AI"
+
+# Non-secret vars. Secrets (SUPABASE_SERVICE_KEY, ADMIN_SECRET) are set with:
+#   wrangler secret put SUPABASE_SERVICE_KEY
+#   wrangler secret put ADMIN_SECRET
+[vars]
+SUPABASE_URL = "https://YOUR-PROJECT-ref.supabase.co"
+# Embedding model + its output dimension. Must match supabase/schema.sql.
+EMBED_MODEL = "@cf/baai/bge-base-en-v1.5"
+EMBED_DIM = "768"
+
+# Free plan: keep observability off or minimal.
+[observability]
+enabled = true

@@ -1,0 +1,9 @@
+# Copy to `.dev.vars` for local `wrangler dev`. Never commit `.dev.vars`.
+# In production set these with `wrangler secret put <NAME>`.
+
+# Supabase service-role key (Project Settings -> API -> service_role).
+# Server-side ONLY. It lives inside the Worker and is never sent to clients.
+SUPABASE_SERVICE_KEY=your-service-role-key
+
+# Shared secret required to create new agent memory spaces via POST /spaces.
+ADMIN_SECRET=choose-a-long-random-string

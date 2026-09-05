@@ -1,0 +1,26 @@
+# dependencies
+node_modules
+
+# build / cloudflare
+dist
+.wrangler
+worker-configuration.d.ts
+
+# local secrets
+.dev.vars
+.deploy.env
+.env
+.env.*
+!.env.example
+
+# editor / os
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+
+# logs
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
