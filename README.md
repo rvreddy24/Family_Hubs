@@ -184,9 +184,22 @@ src/
 scripts/
   deploy.mjs        automated Cloudflare deploy (npm run deploy:auto)
   create-space.mjs  mint a space + print its key (npm run create-space)
+test/                 vitest suite (mocks Supabase + Workers AI, no network)
 supabase/schema.sql   database schema (run in Supabase)
 wrangler.toml         Worker config + AI binding
+CLAUDE.md             context for AI sessions working in this repo
 ```
+
+## Development
+
+```bash
+npm test          # 12 tests: full router end-to-end against an in-memory fake
+npm run typecheck # tsc --noEmit
+```
+
+Tests mock Supabase and Workers AI (`test/harness.ts`), so they need no
+credentials or network. CI (`.github/workflows/ci.yml`) runs typecheck + tests +
+a dry-run build on every push.
 
 ## Notes & limits
 
