@@ -3,6 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# Keep the free *.workers.dev URL enabled.
+workers_dev = true
+
 # Cloudflare Workers AI — used to embed memories (free daily allocation).
 [ai]
 binding = "AI"
