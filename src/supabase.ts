@@ -103,14 +103,36 @@ export async function updateMemory(
   return rows[0] ? stripEmbedding(rows[0]) : null;
 }
 
-export async function listRecent(env: Env, spaceId: string, limit: number): Promise<Memory[]> {
+export async function listRecent(
+  env: Env,
+  spaceId: string,
+  limit: number,
+  tag?: string,
+): Promise<Memory[]> {
+  const tagFilter = tag ? `&tags=cs.%7B${encodeURIComponent(tag)}%7D` : "";
   const res = await sb(
     env,
     `memories?space_id=eq.${encodeURIComponent(spaceId)}` +
+      tagFilter +
       `&select=id,content,tags,metadata,created_at` +
       `&order=created_at.desc&limit=${limit}`,
   );
   return ok<Memory[]>(res, "list recent");
+}
+
+/** Total number of memories in a space (uses PostgREST exact count). */
+export async function countMemories(env: Env, spaceId: string): Promise<number> {
+  const res = await sb(
+    env,
+    `memories?space_id=eq.${encodeURIComponent(spaceId)}&select=id`,
+    { method: "HEAD", headers: { Prefer: "count=exact", Range: "0-0" } },
+  );
+  if (!res.ok && res.status !== 206) {
+    throw new ApiError(`Supabase count failed (${res.status})`, 502);
+  }
+  const range = res.headers.get("content-range") ?? "";
+  const total = range.includes("/") ? parseInt(range.split("/")[1], 10) : 0;
+  return Number.isFinite(total) ? total : 0;
 }
 
 export async function deleteMemory(env: Env, spaceId: string, id: string): Promise<boolean> {

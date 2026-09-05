@@ -7,7 +7,8 @@ Recall is a single [Cloudflare Worker](https://developers.cloudflare.com/workers
 that speaks two protocols over the same backend:
 
 - **MCP** (`POST /mcp`, Streamable HTTP) — connect it to Claude or any MCP client
-  and the agent gains five tools: `remember`, `recall`, `list_recent`, `update`, `forget`.
+  and the agent gains six tools: `remember`, `recall`, `list_recent`, `stats`,
+  `update`, `forget`.
 - **REST** (`/remember`, `/recall`, `/recent`, `/memories/:id`) — for scripts and
   non-MCP agents.
 - **Dashboard** (`/app`) — a built-in web UI to search, add, edit, and delete a
@@ -162,7 +163,8 @@ curl -X DELETE https://YOUR-WORKER/memories/THE_ID -H "Authorization: Bearer rcl
 | POST   | `/mcp`           | space key     | MCP Streamable HTTP (JSON-RPC)                          |
 | POST   | `/remember`      | space key     | `{ content, tags?, metadata? }`                         |
 | POST   | `/recall`        | space key     | `{ query, limit?, min_similarity? }`                    |
-| GET    | `/recent`        | space key     | `?limit=`                                               |
+| GET    | `/recent`        | space key     | `?limit=` and optional `?tag=`                          |
+| GET    | `/stats`         | space key     | `{ space_id, name, memory_count }`                      |
 | PATCH  | `/memories/:id`  | space key     | `{ content?, tags?, metadata? }` (re-embeds on content) |
 | DELETE | `/memories/:id`  | space key     | Delete one memory                                       |
 
@@ -193,14 +195,16 @@ CLAUDE.md             context for AI sessions working in this repo
 ## Development
 
 ```bash
-npm test          # 13 tests: full router end-to-end against an in-memory fake
+npm test          # 14 tests: full router end-to-end against an in-memory fake
 npm run typecheck # tsc --noEmit
 npm run dev       # wrangler dev --local
 ```
 
 Tests mock Supabase and Workers AI (`test/harness.ts`), so they need no
 credentials or network. CI (`.github/workflows/ci.yml`) runs typecheck + tests +
-a dry-run build on every push.
+a dry-run build on every push. **CD** (`.github/workflows/deploy.yml`) deploys to
+Cloudflare on every push to `main` once tests pass — it needs two repo secrets,
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
 ## Notes & limits
 

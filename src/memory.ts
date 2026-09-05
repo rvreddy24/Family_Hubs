@@ -2,6 +2,7 @@ import type { Env, Memory, Space } from "./types";
 import { ApiError } from "./http";
 import { embed } from "./embed";
 import {
+  countMemories,
   deleteMemory,
   insertMemory,
   keywordSearch,
@@ -106,13 +107,26 @@ export async function update(
   return updated;
 }
 
-/** Most recently stored memories, newest first. */
+/** Most recently stored memories, newest first. Optionally filtered by tag. */
 export async function recent(
   env: Env,
   space: Space,
-  args: { limit?: number },
+  args: { limit?: number; tag?: string },
 ): Promise<Memory[]> {
-  return listRecent(env, space.id, clamp(args.limit ?? 10, 1, 50));
+  const tag = typeof args.tag === "string" ? args.tag.trim().toLowerCase() : undefined;
+  return listRecent(env, space.id, clamp(args.limit ?? 10, 1, 50), tag || undefined);
+}
+
+/** Simple stats for a space. */
+export async function stats(
+  env: Env,
+  space: Space,
+): Promise<{ space_id: string; name: string; memory_count: number }> {
+  return {
+    space_id: space.id,
+    name: space.name,
+    memory_count: await countMemories(env, space.id),
+  };
 }
 
 /** Delete a memory by id (scoped to this space). */

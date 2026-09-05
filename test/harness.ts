@@ -14,7 +14,7 @@ export interface FakeDb {
   memories: Row[];
 }
 
-type Filter = { col: string; op: "eq" | "ilike"; val: string };
+type Filter = { col: string; op: "eq" | "ilike" | "cs"; val: string };
 
 function parseFilters(qs: URLSearchParams): Filter[] {
   const out: Filter[] = [];
@@ -26,13 +26,23 @@ function parseFilters(qs: URLSearchParams): Filter[] {
       continue;
     }
     const il = /^ilike\.(.*)$/.exec(v);
-    if (il) out.push({ col: k, op: "ilike", val: il[1] });
+    if (il) {
+      out.push({ col: k, op: "ilike", val: il[1] });
+      continue;
+    }
+    // array contains: tags=cs.{tagname}
+    const cs = /^cs\.\{(.*)\}$/.exec(v);
+    if (cs) out.push({ col: k, op: "cs", val: cs[1] });
   }
   return out;
 }
 
 function match(row: Row, filters: Filter[]): boolean {
   return filters.every((f) => {
+    if (f.op === "cs") {
+      const arr = Array.isArray(row[f.col]) ? (row[f.col] as string[]) : [];
+      return arr.includes(f.val);
+    }
     const cell = String(row[f.col] ?? "");
     if (f.op === "eq") return cell === f.val;
     // ilike: PostgREST uses * as wildcard -> case-insensitive substring.
@@ -73,6 +83,11 @@ export function makeFetch(db: FakeDb) {
 
     const store = table === "spaces" ? db.spaces : table === "memories" ? db.memories : null;
     if (!store) return json({ message: "unknown table" }, 404);
+
+    if (method === "HEAD") {
+      const count = store.filter((r) => match(r, filters)).length;
+      return new Response(null, { status: 200, headers: { "content-range": `0-0/${count}` } });
+    }
 
     if (method === "GET") {
       let rows = store.filter((r) => match(r, filters));

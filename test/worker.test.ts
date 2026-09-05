@@ -106,6 +106,24 @@ describe("memory lifecycle", () => {
     expect(db.memories).toHaveLength(0);
   });
 
+  it("reports stats and filters recent by tag", async () => {
+    const key = await newSpace();
+    await call(req("POST", "/remember", { key, body: { content: "alpha note", tags: ["work"] } }));
+    await call(req("POST", "/remember", { key, body: { content: "beta note", tags: ["home"] } }));
+    await call(req("POST", "/remember", { key, body: { content: "gamma note", tags: ["work"] } }));
+
+    const s = await call(req("GET", "/stats", { key }));
+    expect(((await s.json()) as { memory_count: number }).memory_count).toBe(3);
+
+    const work = await call(req("GET", "/recent?tag=work", { key }));
+    const wr = (await work.json()) as { results: Array<{ content: string }> };
+    expect(wr.results).toHaveLength(2);
+    expect(wr.results.every((m) => m.content.includes("note"))).toBe(true);
+
+    const home = await call(req("GET", "/recent?tag=home", { key }));
+    expect(((await home.json()) as { results: unknown[] }).results).toHaveLength(1);
+  });
+
   it("validates input", async () => {
     const key = await newSpace();
     expect((await call(req("POST", "/remember", { key, body: {} }))).status).toBe(400);
@@ -155,7 +173,7 @@ describe("MCP", () => {
     );
     const tools = (await list.json()) as { result: { tools: Array<{ name: string }> } };
     expect(tools.result.tools.map((t) => t.name).sort()).toEqual(
-      ["forget", "list_recent", "recall", "remember", "update"].sort(),
+      ["forget", "list_recent", "recall", "remember", "stats", "update"].sort(),
     );
 
     const callRes = await call(

@@ -10,7 +10,7 @@ import {
   sha256hex,
 } from "./auth";
 import { createSpace } from "./supabase";
-import { forget, recall, recent, remember, update } from "./memory";
+import { forget, recall, recent, remember, stats, update } from "./memory";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -62,7 +62,12 @@ export default {
       if (path === "/recent" && request.method === "GET") {
         const space = await authenticate(request, env);
         const limit = Number(url.searchParams.get("limit") ?? 10);
-        return json({ results: await recent(env, space, { limit }) });
+        const tag = url.searchParams.get("tag") ?? undefined;
+        return json({ results: await recent(env, space, { limit, tag }) });
+      }
+      if (path === "/stats" && request.method === "GET") {
+        const space = await authenticate(request, env);
+        return json(await stats(env, space));
       }
       if (path.startsWith("/memories/") && request.method === "PATCH") {
         const space = await authenticate(request, env);

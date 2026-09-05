@@ -1,5 +1,5 @@
 import type { Env, Memory, Space } from "./types";
-import { forget, recall, recent, remember, update } from "./memory";
+import { forget, recall, recent, remember, stats, update } from "./memory";
 
 /** MCP tool schemas advertised to clients. */
 export const TOOL_DEFS = [
@@ -46,13 +46,19 @@ export const TOOL_DEFS = [
   },
   {
     name: "list_recent",
-    description: "List the most recently stored memories, newest first.",
+    description: "List the most recently stored memories, newest first. Optionally filter by tag.",
     inputSchema: {
       type: "object",
       properties: {
         limit: { type: "number", description: "Max results (1-50, default 10)." },
+        tag: { type: "string", description: "Only return memories carrying this tag." },
       },
     },
+  },
+  {
+    name: "stats",
+    description: "Get a summary of this memory space (how many memories it holds).",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "update",
@@ -102,6 +108,10 @@ export async function callTool(
     case "list_recent": {
       const results = await recent(env, space, args as never);
       return { summary: `${results.length} recent ${plural(results.length)}.`, data: results };
+    }
+    case "stats": {
+      const s = await stats(env, space);
+      return { summary: `${s.memory_count} ${plural(s.memory_count)} stored.`, data: s };
     }
     case "update": {
       const m = await update(env, space, args as never);
