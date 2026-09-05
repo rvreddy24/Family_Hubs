@@ -4,6 +4,9 @@
   "private": true,
   "description": "An open long-term memory layer for AI agents. MCP server + REST API on Cloudflare Workers, backed by Supabase pgvector with Workers AI embeddings.",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
