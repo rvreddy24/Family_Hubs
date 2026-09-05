@@ -193,8 +193,9 @@ CLAUDE.md             context for AI sessions working in this repo
 ## Development
 
 ```bash
-npm test          # 12 tests: full router end-to-end against an in-memory fake
+npm test          # 13 tests: full router end-to-end against an in-memory fake
 npm run typecheck # tsc --noEmit
+npm run dev       # wrangler dev --local
 ```
 
 Tests mock Supabase and Workers AI (`test/harness.ts`), so they need no
@@ -205,5 +206,9 @@ a dry-run build on every push.
 
 - **Free-tier headroom:** Workers 100k req/day; Workers AI has a daily neuron
   allocation (plenty for typical agent memory traffic); Supabase free Postgres.
+- **Graceful degradation:** if embedding is unavailable (e.g. the Workers AI daily
+  allocation is exhausted), memories are still stored (with a null embedding, which
+  `update` can backfill) and `recall` falls back to keyword (ILIKE) search — so the
+  service keeps working instead of erroring.
 - **Embedding dim** must match between `wrangler.toml` and the schema.
 - Recall is stateless per request; there are no background jobs to keep running.

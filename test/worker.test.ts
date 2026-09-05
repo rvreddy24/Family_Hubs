@@ -112,6 +112,25 @@ describe("memory lifecycle", () => {
     expect((await call(req("POST", "/recall", { key, body: {} }))).status).toBe(400);
   });
 
+  it("degrades to keyword search when embeddings are unavailable", async () => {
+    const key = await newSpace();
+    // Simulate the Workers AI daily allocation being exhausted.
+    env.AI = { run: async () => { throw new Error("AI limit reached"); } } as unknown as Env["AI"];
+
+    // remember still succeeds — memory stored with a null embedding, not lost.
+    const created = await call(
+      req("POST", "/remember", { key, body: { content: "the deploy runbook lives in notion" } }),
+    );
+    expect(created.status).toBe(201);
+    expect(db.memories[0].embedding).toBeNull();
+
+    // recall falls back to keyword ILIKE and still finds it.
+    const recalled = await call(req("POST", "/recall", { key, body: { query: "runbook" } }));
+    const rc = (await recalled.json()) as { results: Array<{ content: string }> };
+    expect(rc.results).toHaveLength(1);
+    expect(rc.results[0].content).toContain("runbook");
+  });
+
   it("isolates memories between spaces", async () => {
     const a = await newSpace();
     const b = await newSpace();

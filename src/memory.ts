@@ -4,10 +4,21 @@ import { embed } from "./embed";
 import {
   deleteMemory,
   insertMemory,
+  keywordSearch,
   listRecent,
   matchMemories,
   updateMemory,
 } from "./supabase";
+
+/** Embed, returning null instead of throwing so callers can degrade gracefully. */
+async function tryEmbed(env: Env, text: string): Promise<number[] | null> {
+  try {
+    return await embed(env, text);
+  } catch (e) {
+    console.warn("embedding unavailable, degrading:", (e as Error).message);
+    return null;
+  }
+}
 
 /** Store a new memory. Embeds the content for later semantic recall. */
 export async function remember(
@@ -20,7 +31,10 @@ export async function remember(
   if (content.length > 8000) throw new ApiError("`content` too long (max 8000 chars)", 400);
 
   const tags = normalizeTags(args.tags);
-  const embedding = await embed(env, content);
+  // If embedding is unavailable (e.g. Workers AI daily limit), still store the
+  // memory so nothing is lost — it stays keyword-searchable and can be
+  // re-embedded later via `update`.
+  const embedding = await tryEmbed(env, content);
   return insertMemory(env, {
     space_id: space.id,
     content,
@@ -41,7 +55,10 @@ export async function recall(
 
   const limit = clamp(args.limit ?? 8, 1, 50);
   const minSimilarity = clamp(args.min_similarity ?? 0, 0, 1);
-  const embedding = await embed(env, query);
+  // Semantic search when embeddings are available; otherwise fall back to a
+  // keyword search so recall still returns something useful.
+  const embedding = await tryEmbed(env, query);
+  if (!embedding) return keywordSearch(env, space.id, query, limit);
   return matchMemories(env, space.id, embedding, limit, minSimilarity);
 }
 
@@ -78,7 +95,8 @@ export async function update(
     if (!content) throw new ApiError("`content` cannot be empty", 400);
     if (content.length > 8000) throw new ApiError("`content` too long (max 8000 chars)", 400);
     patch.content = content;
-    patch.embedding = await embed(env, content);
+    const embedding = await tryEmbed(env, content);
+    if (embedding) patch.embedding = embedding;
   }
   if (args.tags !== undefined) patch.tags = normalizeTags(args.tags);
   if (args.metadata !== undefined) patch.metadata = args.metadata;

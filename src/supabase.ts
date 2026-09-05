@@ -123,6 +123,24 @@ export async function deleteMemory(env: Env, spaceId: string, id: string): Promi
   return rows.length > 0;
 }
 
+/** Keyword fallback (ILIKE) used when embeddings are unavailable. */
+export async function keywordSearch(
+  env: Env,
+  spaceId: string,
+  query: string,
+  limit: number,
+): Promise<Memory[]> {
+  const pattern = `*${query.replace(/[*,()]/g, " ").trim()}*`;
+  const res = await sb(
+    env,
+    `memories?space_id=eq.${encodeURIComponent(spaceId)}` +
+      `&content=ilike.${encodeURIComponent(pattern)}` +
+      `&select=id,content,tags,metadata,created_at` +
+      `&order=created_at.desc&limit=${limit}`,
+  );
+  return ok<Memory[]>(res, "keyword search");
+}
+
 export async function matchMemories(
   env: Env,
   spaceId: string,

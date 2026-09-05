@@ -50,12 +50,23 @@ the service-role key (used inside the Worker) can touch data.
 ## Commands
 
 ```bash
-npm run dev         # wrangler dev (local)
-npm test            # vitest — 12 tests, full router against an in-memory fake
+npm run dev         # wrangler dev --local (see note below)
+npm test            # vitest — 13 tests, full router against an in-memory fake
 npm run typecheck   # tsc --noEmit (checks src/)
 npm run deploy      # wrangler deploy (needs wrangler login)
 npm run deploy:auto # scripted deploy via .deploy.env (no browser login)
 ```
+
+Toolchain: Wrangler v4 + `@cloudflare/workers-types` v5. Local dev uses `--local`
+because Workers AI has no local simulator — without `--local`, v4 tries to open a
+remote AI proxy at startup and requires `CLOUDFLARE_API_TOKEN`. Routing, landing,
+and dashboard work locally; actual `AI.run` embedding calls need a token or a real
+deploy.
+
+`recall`/`remember` degrade gracefully: if embedding is unavailable (e.g. the free
+Workers AI daily allocation is exhausted), memories are still stored (with a null
+embedding, re-embeddable via `update`) and `recall` falls back to keyword (ILIKE)
+search. See `tryEmbed` + `keywordSearch`.
 
 Tests live in `test/` and mock Supabase + Workers AI in `test/harness.ts`, so they
 run with no network and no credentials. Add a test when you add a route or tool.

@@ -14,18 +14,31 @@ export interface FakeDb {
   memories: Row[];
 }
 
-function parseFilters(qs: URLSearchParams): Array<[string, string]> {
-  const out: Array<[string, string]> = [];
+type Filter = { col: string; op: "eq" | "ilike"; val: string };
+
+function parseFilters(qs: URLSearchParams): Filter[] {
+  const out: Filter[] = [];
   for (const [k, v] of qs.entries()) {
     if (["select", "order", "limit"].includes(k)) continue;
-    const m = /^eq\.(.*)$/.exec(v);
-    if (m) out.push([k, m[1]]);
+    const eq = /^eq\.(.*)$/.exec(v);
+    if (eq) {
+      out.push({ col: k, op: "eq", val: eq[1] });
+      continue;
+    }
+    const il = /^ilike\.(.*)$/.exec(v);
+    if (il) out.push({ col: k, op: "ilike", val: il[1] });
   }
   return out;
 }
 
-function match(row: Row, filters: Array<[string, string]>): boolean {
-  return filters.every(([col, val]) => String(row[col]) === val);
+function match(row: Row, filters: Filter[]): boolean {
+  return filters.every((f) => {
+    const cell = String(row[f.col] ?? "");
+    if (f.op === "eq") return cell === f.val;
+    // ilike: PostgREST uses * as wildcard -> case-insensitive substring.
+    const needle = f.val.replace(/\*/g, "").toLowerCase();
+    return cell.toLowerCase().includes(needle);
+  });
 }
 
 /** Build a fetch() stand-in that emulates the exact PostgREST calls supabase.ts makes. */
