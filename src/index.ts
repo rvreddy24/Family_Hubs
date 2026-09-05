@@ -11,6 +11,14 @@ import {
 } from "./auth";
 import { createSpace } from "./supabase";
 import { forget, recall, recent, remember, stats, update } from "./memory";
+import { clientIp, enforce } from "./ratelimit";
+
+/** Authenticate the caller, then apply the per-space rate limit. */
+async function authAndLimit(request: Request, env: Env) {
+  const space = await authenticate(request, env);
+  await enforce(env.RL_API, space.id, "this space");
+  return space;
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -44,39 +52,39 @@ export default {
 
       // --- MCP endpoint (space key) ---------------------------------------
       if (path === "/mcp" && request.method === "POST") {
-        const space = await authenticate(request, env);
+        const space = await authAndLimit(request, env);
         return await handleMcp(request, env, space);
       }
 
       // --- REST memory API (space key) ------------------------------------
       if (path === "/remember" && request.method === "POST") {
-        const space = await authenticate(request, env);
+        const space = await authAndLimit(request, env);
         const args = await readJson(request);
         return json(await remember(env, space, args as never), 201);
       }
       if (path === "/recall" && request.method === "POST") {
-        const space = await authenticate(request, env);
+        const space = await authAndLimit(request, env);
         const args = await readJson(request);
         return json({ results: await recall(env, space, args as never) });
       }
       if (path === "/recent" && request.method === "GET") {
-        const space = await authenticate(request, env);
+        const space = await authAndLimit(request, env);
         const limit = Number(url.searchParams.get("limit") ?? 10);
         const tag = url.searchParams.get("tag") ?? undefined;
         return json({ results: await recent(env, space, { limit, tag }) });
       }
       if (path === "/stats" && request.method === "GET") {
-        const space = await authenticate(request, env);
+        const space = await authAndLimit(request, env);
         return json(await stats(env, space));
       }
       if (path.startsWith("/memories/") && request.method === "PATCH") {
-        const space = await authenticate(request, env);
+        const space = await authAndLimit(request, env);
         const id = decodeURIComponent(path.slice("/memories/".length));
         const args = await readJson(request);
         return json(await update(env, space, { ...args, id } as never));
       }
       if (path.startsWith("/memories/") && request.method === "DELETE") {
-        const space = await authenticate(request, env);
+        const space = await authAndLimit(request, env);
         const id = decodeURIComponent(path.slice("/memories/".length));
         return json(await forget(env, space, { id }));
       }
@@ -102,6 +110,7 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
 }
 
 async function createSpaceRoute(request: Request, env: Env): Promise<Response> {
+  await enforce(env.RL_SPACES, clientIp(request), "space creation");
   const auth = request.headers.get("Authorization") ?? "";
   const provided = /^Bearer\s+(.+)$/i.exec(auth.trim())?.[1]?.trim();
   if (!env.ADMIN_SECRET) throw new ApiError("Server missing ADMIN_SECRET", 500);

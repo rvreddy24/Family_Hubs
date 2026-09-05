@@ -14,6 +14,11 @@ that speaks two protocols over the same backend:
 - **Dashboard** (`/app`) — a built-in web UI to search, add, edit, and delete a
   space's memories. No separate deploy; it ships inside the same Worker.
 
+MCP clients can also **browse memories as resources** (`resources/list` /
+`resources/read`, uri `recall://memory/<id>`). Memories can be given a **TTL**
+(`ttl_seconds` on `remember`) to auto-expire. Public endpoints are **rate-limited**
+per space (and per IP for space creation) via Cloudflare's rate-limiting binding.
+
 Memories are embedded with **Cloudflare Workers AI** and stored in **Supabase
 Postgres + pgvector**, so `recall` is real semantic search, not keyword matching.
 
@@ -161,7 +166,7 @@ curl -X DELETE https://YOUR-WORKER/memories/THE_ID -H "Authorization: Bearer rcl
 | GET    | `/health`        | —             | Liveness                                                |
 | POST   | `/spaces`        | admin secret  | `{ name? }` → returns `api_key` once                    |
 | POST   | `/mcp`           | space key     | MCP Streamable HTTP (JSON-RPC)                          |
-| POST   | `/remember`      | space key     | `{ content, tags?, metadata? }`                         |
+| POST   | `/remember`      | space key     | `{ content, tags?, metadata?, ttl_seconds? }`           |
 | POST   | `/recall`        | space key     | `{ query, limit?, min_similarity? }`                    |
 | GET    | `/recent`        | space key     | `?limit=` and optional `?tag=`                          |
 | GET    | `/stats`         | space key     | `{ space_id, name, memory_count }`                      |
@@ -195,7 +200,7 @@ CLAUDE.md             context for AI sessions working in this repo
 ## Development
 
 ```bash
-npm test          # 14 tests: full router end-to-end against an in-memory fake
+npm test          # 17 tests: full router end-to-end against an in-memory fake
 npm run typecheck # tsc --noEmit
 npm run dev       # wrangler dev --local
 ```

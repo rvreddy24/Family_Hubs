@@ -51,7 +51,7 @@ the service-role key (used inside the Worker) can touch data.
 
 ```bash
 npm run dev         # wrangler dev --local (see note below)
-npm test            # vitest — 14 tests, full router against an in-memory fake
+npm test            # vitest — 17 tests, full router against an in-memory fake
 npm run typecheck   # tsc --noEmit (checks src/)
 npm run deploy      # wrangler deploy (needs wrangler login)
 npm run deploy:auto # scripted deploy via .deploy.env (no browser login)
@@ -67,6 +67,15 @@ deploy.
 Workers AI daily allocation is exhausted), memories are still stored (with a null
 embedding, re-embeddable via `update`) and `recall` falls back to keyword (ILIKE)
 search. See `tryEmbed` + `keywordSearch`.
+
+Extras: **TTL** — `ttl_seconds` on `remember` stores `_expires_at` in metadata (no
+schema change); expired rows are filtered out and lazily purged on read
+(`isExpired`/`pruneExpired` in memory.ts). **MCP resources** — `resources/list` and
+`resources/read` (uri `recall://memory/<id>`) in mcp.ts. **Rate limiting** — two
+Cloudflare `unsafe`/ratelimit bindings in wrangler.toml (`RL_API` per space,
+`RL_SPACES` per IP), enforced via `src/ratelimit.ts`; both are optional in `Env` so
+tests and local dev run without them (`enforce` is a no-op when the binding is
+absent).
 
 Tests live in `test/` and mock Supabase + Workers AI in `test/harness.ts`, so they
 run with no network and no credentials. Add a test when you add a route or tool.

@@ -4,6 +4,7 @@ import { embed } from "./embed";
 import {
   countMemories,
   deleteMemory,
+  getMemory,
   insertMemory,
   keywordSearch,
   listRecent,
@@ -25,13 +26,19 @@ async function tryEmbed(env: Env, text: string): Promise<number[] | null> {
 export async function remember(
   env: Env,
   space: Space,
-  args: { content: string; tags?: string[]; metadata?: Record<string, unknown> },
+  args: {
+    content: string;
+    tags?: string[];
+    metadata?: Record<string, unknown>;
+    ttl_seconds?: number;
+  },
 ): Promise<Memory> {
   const content = (args.content ?? "").trim();
   if (!content) throw new ApiError("`content` is required", 400);
   if (content.length > 8000) throw new ApiError("`content` too long (max 8000 chars)", 400);
 
   const tags = normalizeTags(args.tags);
+  const metadata = withExpiry(args.metadata ?? {}, args.ttl_seconds);
   // If embedding is unavailable (e.g. Workers AI daily limit), still store the
   // memory so nothing is lost — it stays keyword-searchable and can be
   // re-embedded later via `update`.
@@ -40,9 +47,40 @@ export async function remember(
     space_id: space.id,
     content,
     tags,
-    metadata: args.metadata ?? {},
+    metadata,
     embedding,
   });
+}
+
+/** Attach `_expires_at` to metadata when a positive TTL is given. */
+function withExpiry(
+  base: Record<string, unknown>,
+  ttlSeconds?: number,
+): Record<string, unknown> {
+  const ttl = Number(ttlSeconds);
+  if (!Number.isFinite(ttl) || ttl <= 0) return base;
+  const capped = Math.min(ttl, 60 * 60 * 24 * 365); // max 1 year
+  return { ...base, _expires_at: new Date(Date.now() + capped * 1000).toISOString() };
+}
+
+/** True if a memory carries an `_expires_at` in the past. */
+function isExpired(m: Memory): boolean {
+  const exp = (m.metadata as { _expires_at?: unknown } | undefined)?._expires_at;
+  return typeof exp === "string" && new Date(exp).getTime() <= Date.now();
+}
+
+/** Drop expired memories from a result set and purge them best-effort. */
+function pruneExpired(env: Env, space: Space, rows: Memory[]): Memory[] {
+  const live: Memory[] = [];
+  for (const m of rows) {
+    if (isExpired(m)) {
+      // Fire-and-forget cleanup; ignore failures.
+      void deleteMemory(env, space.id, m.id).catch(() => {});
+    } else {
+      live.push(m);
+    }
+  }
+  return live;
 }
 
 /** Semantic search across this space's memories. */
@@ -59,8 +97,10 @@ export async function recall(
   // Semantic search when embeddings are available; otherwise fall back to a
   // keyword search so recall still returns something useful.
   const embedding = await tryEmbed(env, query);
-  if (!embedding) return keywordSearch(env, space.id, query, limit);
-  return matchMemories(env, space.id, embedding, limit, minSimilarity);
+  const rows = embedding
+    ? await matchMemories(env, space.id, embedding, limit, minSimilarity)
+    : await keywordSearch(env, space.id, query, limit);
+  return pruneExpired(env, space, rows);
 }
 
 /** Edit an existing memory. Re-embeds when `content` changes. */
@@ -114,7 +154,19 @@ export async function recent(
   args: { limit?: number; tag?: string },
 ): Promise<Memory[]> {
   const tag = typeof args.tag === "string" ? args.tag.trim().toLowerCase() : undefined;
-  return listRecent(env, space.id, clamp(args.limit ?? 10, 1, 50), tag || undefined);
+  const rows = await listRecent(env, space.id, clamp(args.limit ?? 10, 1, 50), tag || undefined);
+  return pruneExpired(env, space, rows);
+}
+
+/** Fetch a single memory by id (scoped to the space), or null if missing/expired. */
+export async function getById(env: Env, space: Space, id: string): Promise<Memory | null> {
+  const m = await getMemory(env, space.id, id.trim());
+  if (!m) return null;
+  if (isExpired(m)) {
+    void deleteMemory(env, space.id, m.id).catch(() => {});
+    return null;
+  }
+  return m;
 }
 
 /** Simple stats for a space. */

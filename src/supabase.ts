@@ -135,6 +135,20 @@ export async function countMemories(env: Env, spaceId: string): Promise<number> 
   return Number.isFinite(total) ? total : 0;
 }
 
+export async function getMemory(
+  env: Env,
+  spaceId: string,
+  id: string,
+): Promise<Memory | null> {
+  const res = await sb(
+    env,
+    `memories?space_id=eq.${encodeURIComponent(spaceId)}&id=eq.${encodeURIComponent(id)}` +
+      `&select=id,content,tags,metadata,created_at&limit=1`,
+  );
+  const rows = await ok<Memory[]>(res, "get memory");
+  return rows[0] ?? null;
+}
+
 export async function deleteMemory(env: Env, spaceId: string, id: string): Promise<boolean> {
   const res = await sb(
     env,

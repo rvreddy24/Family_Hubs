@@ -1,8 +1,17 @@
 /// <reference types="@cloudflare/workers-types" />
 
+/** Cloudflare rate-limiting binding (unsafe/beta). */
+export interface RateLimiter {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface Env {
   /** Workers AI binding (embeddings). */
   AI: Ai;
+  /** Per-space API rate limiter. Optional so tests/local dev work without it. */
+  RL_API?: RateLimiter;
+  /** Per-IP limiter guarding space creation. */
+  RL_SPACES?: RateLimiter;
   /** Supabase project URL, e.g. https://abc.supabase.co */
   SUPABASE_URL: string;
   /** Supabase service-role key. Secret. Server-side only. */

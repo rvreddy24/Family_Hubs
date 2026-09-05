@@ -22,6 +22,12 @@ export const TOOL_DEFS = [
           description: "Optional structured metadata to attach.",
           additionalProperties: true,
         },
+        ttl_seconds: {
+          type: "number",
+          description:
+            "Optional time-to-live in seconds. The memory auto-expires and is " +
+            "dropped from results after this long (max 1 year).",
+        },
       },
       required: ["content"],
     },

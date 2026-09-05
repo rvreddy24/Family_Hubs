@@ -17,6 +17,20 @@ routes = [
 [ai]
 binding = "AI"
 
+# Rate limiting (no external storage needed). Keys are supplied at call time:
+# RL_API is keyed by space id, RL_SPACES by client IP.
+[[unsafe.bindings]]
+name = "RL_API"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_SPACES"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 8, period = 60 }
+
 # Non-secret vars. Secrets (SUPABASE_SERVICE_KEY, ADMIN_SECRET) are set with:
 #   wrangler secret put SUPABASE_SERVICE_KEY
 #   wrangler secret put ADMIN_SECRET

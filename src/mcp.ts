@@ -1,6 +1,19 @@
 import type { Env, Space } from "./types";
+import type { Memory } from "./types";
 import { json } from "./http";
 import { TOOL_DEFS, callTool } from "./tools";
+import { getById, recent } from "./memory";
+
+const MEMORY_URI = /^recall:\/\/memory\/(.+)$/;
+
+function memoryResource(m: Memory) {
+  return {
+    uri: `recall://memory/${m.id}`,
+    name: m.content.length > 60 ? `${m.content.slice(0, 57)}…` : m.content,
+    description: m.tags.length ? `tags: ${m.tags.join(", ")}` : "memory",
+    mimeType: "text/plain",
+  };
+}
 
 const SERVER_INFO = { name: "recall", version: "1.0.0" };
 const PROTOCOL_VERSION = "2024-11-05";
@@ -28,7 +41,10 @@ async function handleMessage(env: Env, space: Space, msg: RpcMessage): Promise<o
       return result(id, {
         protocolVersion:
           (params?.protocolVersion as string | undefined) ?? PROTOCOL_VERSION,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: {
+          tools: { listChanged: false },
+          resources: { subscribe: false, listChanged: false },
+        },
         serverInfo: SERVER_INFO,
         instructions:
           "Long-term memory for this agent. Call `recall` before answering when prior " +
@@ -44,6 +60,34 @@ async function handleMessage(env: Env, space: Space, msg: RpcMessage): Promise<o
 
     case "tools/list":
       return result(id, { tools: TOOL_DEFS });
+
+    case "resources/list": {
+      const memories = await recent(env, space, { limit: 50 });
+      return result(id, { resources: memories.map(memoryResource) });
+    }
+
+    case "resources/templates/list":
+      return result(id, {
+        resourceTemplates: [
+          {
+            uriTemplate: "recall://memory/{id}",
+            name: "Memory by id",
+            description: "Read one stored memory by its id.",
+            mimeType: "text/plain",
+          },
+        ],
+      });
+
+    case "resources/read": {
+      const uri = String(params?.uri ?? "");
+      const m = MEMORY_URI.exec(uri);
+      if (!m) return rpcError(id, -32602, `Unsupported resource uri: ${uri}`);
+      const mem = await getById(env, space, m[1]);
+      if (!mem) return rpcError(id, -32602, "Resource not found");
+      return result(id, {
+        contents: [{ uri, mimeType: "text/plain", text: mem.content }],
+      });
+    }
 
     case "tools/call": {
       const name = params?.name as string;

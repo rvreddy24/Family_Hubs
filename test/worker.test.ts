@@ -149,6 +149,27 @@ describe("memory lifecycle", () => {
     expect(rc.results[0].content).toContain("runbook");
   });
 
+  it("excludes expired memories from reads", async () => {
+    const key = await newSpace();
+    await call(req("POST", "/remember", { key, body: { content: "fresh" } }));
+    const r = await call(req("POST", "/remember", { key, body: { content: "temporary", ttl_seconds: 60 } }));
+    const mem = (await r.json()) as { id: string };
+    // Force it expired directly in the fake db.
+    const row = db.memories.find((m) => m.id === mem.id)!;
+    row.metadata = { _expires_at: new Date(Date.now() - 1000).toISOString() };
+
+    const rec = await call(req("GET", "/recent", { key }));
+    const results = ((await rec.json()) as { results: Array<{ content: string }> }).results;
+    expect(results.map((m) => m.content)).toEqual(["fresh"]);
+  });
+
+  it("returns 429 when the rate limiter denies", async () => {
+    const key = await newSpace();
+    env.RL_API = { limit: async () => ({ success: false }) };
+    const res = await call(req("GET", "/recent", { key }));
+    expect(res.status).toBe(429);
+  });
+
   it("isolates memories between spaces", async () => {
     const a = await newSpace();
     const b = await newSpace();
@@ -190,6 +211,27 @@ describe("MCP", () => {
     const cr = (await callRes.json()) as { result: { isError: boolean } };
     expect(cr.result.isError).toBe(false);
     expect(db.memories).toHaveLength(1);
+  });
+
+  it("exposes memories as resources", async () => {
+    const key = await newSpace();
+    const r = await call(req("POST", "/remember", { key, body: { content: "resource me", tags: ["x"] } }));
+    const mem = (await r.json()) as { id: string };
+
+    const list = await call(
+      req("POST", "/mcp", { key, body: { jsonrpc: "2.0", id: 1, method: "resources/list" } }),
+    );
+    const resources = (await list.json() as { result: { resources: Array<{ uri: string }> } }).result.resources;
+    expect(resources[0].uri).toBe(`recall://memory/${mem.id}`);
+
+    const read = await call(
+      req("POST", "/mcp", {
+        key,
+        body: { jsonrpc: "2.0", id: 2, method: "resources/read", params: { uri: `recall://memory/${mem.id}` } },
+      }),
+    );
+    const contents = (await read.json() as { result: { contents: Array<{ text: string }> } }).result.contents;
+    expect(contents[0].text).toBe("resource me");
   });
 
   it("treats notifications as 202 with no body", async () => {
