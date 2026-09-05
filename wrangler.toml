@@ -11,7 +11,7 @@ binding = "AI"
 #   wrangler secret put SUPABASE_SERVICE_KEY
 #   wrangler secret put ADMIN_SECRET
 [vars]
-SUPABASE_URL = "https://YOUR-PROJECT-ref.supabase.co"
+SUPABASE_URL = "https://qvwyalktyadfzitdrxqr.supabase.co"
 # Embedding model + its output dimension. Must match supabase/schema.sql.
 EMBED_MODEL = "@cf/baai/bge-base-en-v1.5"
 EMBED_DIM = "768"

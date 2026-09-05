@@ -58,12 +58,14 @@ const toml = readFileSync("wrangler.toml", "utf8").replace(
 writeFileSync("wrangler.toml", toml);
 console.log("✓ wrangler.toml SUPABASE_URL set");
 
-// 2. Secrets.
+// 2. Deploy first so the Worker exists (setting a secret on a missing Worker
+//    can prompt interactively).
+console.log("→ deploying…");
+wrangler(["deploy"]);
+
+// 3. Attach secrets (each updates the existing Worker in place).
 console.log("→ setting secrets…");
 wrangler(["secret", "put", "SUPABASE_SERVICE_KEY"], process.env.SUPABASE_SERVICE_KEY + "\n");
 wrangler(["secret", "put", "ADMIN_SECRET"], process.env.ADMIN_SECRET + "\n");
 
-// 3. Deploy.
-console.log("→ deploying…");
-wrangler(["deploy"]);
 console.log("\n✓ Deployed. Next: create a space with scripts/create-space.mjs");
