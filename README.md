@@ -7,8 +7,8 @@ Recall is a single [Cloudflare Worker](https://developers.cloudflare.com/workers
 that speaks two protocols over the same backend:
 
 - **MCP** (`POST /mcp`, Streamable HTTP) — connect it to Claude or any MCP client
-  and the agent gains six tools: `remember`, `recall`, `list_recent`, `stats`,
-  `update`, `forget`.
+  and the agent gains seven tools: `remember`, `recall`, `ask`, `list_recent`,
+  `stats`, `update`, `forget`.
 - **REST** (`/remember`, `/recall`, `/recent`, `/memories/:id`) — for scripts and
   non-MCP agents.
 - **Dashboard** (`/app`) — a built-in web UI to search, add, edit, and delete a
@@ -168,8 +168,11 @@ curl -X DELETE https://YOUR-WORKER/memories/THE_ID -H "Authorization: Bearer rcl
 | POST   | `/mcp`           | space key     | MCP Streamable HTTP (JSON-RPC)                          |
 | POST   | `/remember`      | space key     | `{ content, tags?, metadata?, ttl_seconds? }`           |
 | POST   | `/recall`        | space key     | `{ query, limit?, min_similarity? }`                    |
+| POST   | `/ask`           | space key     | `{ question, limit? }` → RAG answer + sources           |
 | GET    | `/recent`        | space key     | `?limit=` and optional `?tag=`                          |
 | GET    | `/stats`         | space key     | `{ space_id, name, memory_count }`                      |
+| GET    | `/export`        | space key     | All memories as JSON                                     |
+| POST   | `/import`        | space key     | `{ memories: [{content, tags?, metadata?}] }` (≤100)    |
 | PATCH  | `/memories/:id`  | space key     | `{ content?, tags?, metadata? }` (re-embeds on content) |
 | DELETE | `/memories/:id`  | space key     | Delete one memory                                       |
 
@@ -200,7 +203,7 @@ CLAUDE.md             context for AI sessions working in this repo
 ## Development
 
 ```bash
-npm test          # 17 tests: full router end-to-end against an in-memory fake
+npm test          # 19 tests: full router end-to-end against an in-memory fake
 npm run typecheck # tsc --noEmit
 npm run dev       # wrangler dev --local
 ```

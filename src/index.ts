@@ -10,7 +10,7 @@ import {
   sha256hex,
 } from "./auth";
 import { createSpace } from "./supabase";
-import { forget, recall, recent, remember, stats, update } from "./memory";
+import { ask, exportAll, forget, importMany, recall, recent, remember, stats, update } from "./memory";
 import { clientIp, enforce } from "./ratelimit";
 
 /** Authenticate the caller, then apply the per-space rate limit. */
@@ -76,6 +76,22 @@ export default {
       if (path === "/stats" && request.method === "GET") {
         const space = await authAndLimit(request, env);
         return json(await stats(env, space));
+      }
+      if (path === "/ask" && request.method === "POST") {
+        const space = await authAndLimit(request, env);
+        const args = await readJson(request);
+        return json(await ask(env, space, args as never));
+      }
+      if (path === "/export" && request.method === "GET") {
+        const space = await authAndLimit(request, env);
+        const memories = await exportAll(env, space);
+        return json({ space_id: space.id, count: memories.length, memories });
+      }
+      if (path === "/import" && request.method === "POST") {
+        const space = await authAndLimit(request, env);
+        const body = await readJson(request);
+        const items = (body.memories ?? body) as never;
+        return json(await importMany(env, space, items), 201);
       }
       if (path.startsWith("/memories/") && request.method === "PATCH") {
         const space = await authAndLimit(request, env);

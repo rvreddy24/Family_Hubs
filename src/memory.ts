@@ -158,6 +158,85 @@ export async function recent(
   return pruneExpired(env, space, rows);
 }
 
+/**
+ * Retrieval-augmented answer: recall relevant memories, then have the text model
+ * synthesize an answer grounded in them.
+ */
+export async function ask(
+  env: Env,
+  space: Space,
+  args: { question: string; limit?: number },
+): Promise<{ answer: string; sources: Memory[] }> {
+  const question = (args.question ?? "").trim();
+  if (!question) throw new ApiError("`question` is required", 400);
+
+  const sources = await recall(env, space, {
+    query: question,
+    limit: clamp(args.limit ?? 6, 1, 20),
+  });
+  if (sources.length === 0) {
+    return { answer: "I don't have any memories relevant to that yet.", sources: [] };
+  }
+
+  const context = sources.map((m, i) => `[${i + 1}] ${m.content}`).join("\n");
+  const prompt =
+    `Answer the question using ONLY the memories below. If they don't contain the ` +
+    `answer, say you don't know. Cite the memories you use like [1].\n\n` +
+    `Memories:\n${context}\n\nQuestion: ${question}`;
+
+  try {
+    const out = (await env.AI.run(env.CHAT_MODEL as keyof AiModels, {
+      messages: [
+        { role: "system", content: "You are a concise assistant answering from stored memories." },
+        { role: "user", content: prompt },
+      ],
+      max_tokens: 512,
+    } as never)) as { response?: string };
+    const answer = (out?.response ?? "").trim();
+    return { answer: answer || "(No answer produced.)", sources };
+  } catch {
+    return {
+      answer: "(Could not synthesize an answer right now — here are the relevant memories.)",
+      sources,
+    };
+  }
+}
+
+/** Export every memory in a space (no embeddings). */
+export async function exportAll(env: Env, space: Space): Promise<Memory[]> {
+  const rows = await listRecent(env, space.id, 1000);
+  return pruneExpired(env, space, rows);
+}
+
+/** Bulk-insert memories (each is embedded). Caps the batch size. */
+export async function importMany(
+  env: Env,
+  space: Space,
+  items: Array<{ content: string; tags?: string[]; metadata?: Record<string, unknown> }>,
+): Promise<{ imported: number; skipped: number }> {
+  if (!Array.isArray(items)) throw new ApiError("`memories` must be an array", 400);
+  const batch = items.slice(0, 100);
+  let imported = 0;
+  let skipped = 0;
+  for (const item of batch) {
+    const content = (item?.content ?? "").toString().trim();
+    if (!content || content.length > 8000) {
+      skipped++;
+      continue;
+    }
+    const embedding = await tryEmbed(env, content);
+    await insertMemory(env, {
+      space_id: space.id,
+      content,
+      tags: normalizeTags(item.tags),
+      metadata: item.metadata ?? {},
+      embedding,
+    });
+    imported++;
+  }
+  return { imported, skipped };
+}
+
 /** Fetch a single memory by id (scoped to the space), or null if missing/expired. */
 export async function getById(env: Env, space: Space, id: string): Promise<Memory | null> {
   const m = await getMemory(env, space.id, id.trim());

@@ -1,5 +1,5 @@
 import type { Env, Memory, Space } from "./types";
-import { forget, recall, recent, remember, stats, update } from "./memory";
+import { ask, forget, recall, recent, remember, stats, update } from "./memory";
 
 /** MCP tool schemas advertised to clients. */
 export const TOOL_DEFS = [
@@ -67,6 +67,20 @@ export const TOOL_DEFS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "ask",
+    description:
+      "Ask a natural-language question and get an answer synthesized from your " +
+      "memories (retrieval-augmented). Returns the answer plus the source memories.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "The question to answer from memory." },
+        limit: { type: "number", description: "How many memories to ground on (1-20, default 6)." },
+      },
+      required: ["question"],
+    },
+  },
+  {
     name: "update",
     description:
       "Edit an existing memory by id. Provide any of content, tags, or metadata. " +
@@ -118,6 +132,10 @@ export async function callTool(
     case "stats": {
       const s = await stats(env, space);
       return { summary: `${s.memory_count} ${plural(s.memory_count)} stored.`, data: s };
+    }
+    case "ask": {
+      const a = await ask(env, space, args as never);
+      return { summary: a.answer, data: a };
     }
     case "update": {
       const m = await update(env, space, args as never);

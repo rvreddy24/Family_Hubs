@@ -136,14 +136,19 @@ export function makeEnv(): { env: Env; db: FakeDb } {
   const db: FakeDb = { spaces: [], memories: [] };
   const env: Env = {
     AI: {
-      // bge-style output; dimension matches EMBED_DIM below.
-      run: async () => ({ data: [new Array(8).fill(0.1)] }),
+      // Embeddings: { text: [...] } -> { data: [[...]] }.
+      // Chat: { messages: [...] } -> { response: "..." }.
+      run: async (_model: string, input: { messages?: unknown; text?: unknown }) => {
+        if (input && input.messages) return { response: "Synthesized answer from memories." };
+        return { data: [new Array(8).fill(0.1)] };
+      },
     } as unknown as Ai,
     SUPABASE_URL: "https://fake.supabase.co",
     SUPABASE_SERVICE_KEY: "service-key",
     ADMIN_SECRET: "admin-secret",
     EMBED_MODEL: "@cf/baai/bge-base-en-v1.5",
     EMBED_DIM: "8",
+    CHAT_MODEL: "@cf/meta/llama-3.1-8b-instruct",
   };
   return { env, db };
 }

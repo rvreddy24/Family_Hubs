@@ -84,6 +84,8 @@ curl -X POST ${origin}/recall \\
     <div><span class="m">POST</span> <code>/spaces</code> — create a memory space (admin secret)</div>
     <div><span class="m">POST</span> <code>/remember</code> — store a memory (space key)</div>
     <div><span class="m">POST</span> <code>/recall</code> — semantic search (space key)</div>
+    <div><span class="m">POST</span> <code>/ask</code> — RAG answer from your memories (space key)</div>
+    <div><span class="m">GET/POST</span> <code>/export · /import</code> — back up / restore (space key)</div>
     <div><span class="m">GET</span> <code>/recent</code> — recent memories, optional ?tag= (space key)</div>
     <div><span class="m">GET</span> <code>/stats</code> — memory count for the space (space key)</div>
     <div><span class="m">PATCH</span> <code>/memories/:id</code> — edit a memory (space key)</div>

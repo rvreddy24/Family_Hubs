@@ -22,6 +22,8 @@ export interface Env {
   EMBED_MODEL: string;
   /** Embedding dimension as a string (must match schema.sql). */
   EMBED_DIM: string;
+  /** Text-generation model id for /ask (RAG). */
+  CHAT_MODEL: string;
 }
 
 export interface Space {

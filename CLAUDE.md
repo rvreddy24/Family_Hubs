@@ -13,8 +13,9 @@ Recall is a single **Cloudflare Worker** that provides durable, semantically
 searchable memory to AI agents, over three surfaces:
 
 - **MCP** — `POST /mcp` (Streamable HTTP JSON-RPC). Tools: `remember`, `recall`,
-  `list_recent`, `stats`, `update`, `forget`.
-- **REST** — `/remember`, `/recall`, `/recent`, `PATCH|DELETE /memories/:id`.
+  `ask`, `list_recent`, `stats`, `update`, `forget`.
+- **REST** — `/remember`, `/recall`, `/ask`, `/recent`, `/export`, `/import`,
+  `PATCH|DELETE /memories/:id`.
 - **Dashboard** — `GET /app`, a self-contained web UI (no build step).
 
 Backend: **Supabase Postgres + pgvector** for storage/search, **Cloudflare
@@ -51,7 +52,7 @@ the service-role key (used inside the Worker) can touch data.
 
 ```bash
 npm run dev         # wrangler dev --local (see note below)
-npm test            # vitest — 17 tests, full router against an in-memory fake
+npm test            # vitest — 19 tests, full router against an in-memory fake
 npm run typecheck   # tsc --noEmit (checks src/)
 npm run deploy      # wrangler deploy (needs wrangler login)
 npm run deploy:auto # scripted deploy via .deploy.env (no browser login)

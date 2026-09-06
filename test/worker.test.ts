@@ -124,6 +124,31 @@ describe("memory lifecycle", () => {
     expect(((await home.json()) as { results: unknown[] }).results).toHaveLength(1);
   });
 
+  it("answers questions from memory (RAG /ask)", async () => {
+    const key = await newSpace();
+    await call(req("POST", "/remember", { key, body: { content: "The wifi password is hunter2" } }));
+    const res = await call(req("POST", "/ask", { key, body: { question: "what is the wifi password?" } }));
+    const body = (await res.json()) as { answer: string; sources: unknown[] };
+    expect(body.answer).toContain("Synthesized answer");
+    expect(body.sources.length).toBeGreaterThan(0);
+  });
+
+  it("exports and imports memories", async () => {
+    const key = await newSpace();
+    const imp = await call(
+      req("POST", "/import", {
+        key,
+        body: { memories: [{ content: "imported one", tags: ["seed"] }, { content: "imported two" }] },
+      }),
+    );
+    expect(((await imp.json()) as { imported: number }).imported).toBe(2);
+
+    const exp = await call(req("GET", "/export", { key }));
+    const ex = (await exp.json()) as { count: number; memories: Array<{ content: string }> };
+    expect(ex.count).toBe(2);
+    expect(ex.memories.map((m) => m.content).sort()).toEqual(["imported one", "imported two"]);
+  });
+
   it("validates input", async () => {
     const key = await newSpace();
     expect((await call(req("POST", "/remember", { key, body: {} }))).status).toBe(400);
@@ -194,7 +219,7 @@ describe("MCP", () => {
     );
     const tools = (await list.json()) as { result: { tools: Array<{ name: string }> } };
     expect(tools.result.tools.map((t) => t.name).sort()).toEqual(
-      ["forget", "list_recent", "recall", "remember", "stats", "update"].sort(),
+      ["ask", "forget", "list_recent", "recall", "remember", "stats", "update"].sort(),
     );
 
     const callRes = await call(
