@@ -194,7 +194,8 @@ export async function ask(
     } as never)) as { response?: string };
     const answer = (out?.response ?? "").trim();
     return { answer: answer || "(No answer produced.)", sources };
-  } catch {
+  } catch (e) {
+    console.error("ask/chat failed [model=" + env.CHAT_MODEL + "]:", (e as Error).message);
     return {
       answer: "(Could not synthesize an answer right now — here are the relevant memories.)",
       sources,
