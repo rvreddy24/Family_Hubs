@@ -8,6 +8,7 @@ import {
   generateApiKey,
   generateSpaceId,
   sha256hex,
+  timingSafeEqual,
 } from "./auth";
 import { createSpace } from "./supabase";
 import { ask, exportAll, forget, importMany, recall, recent, remember, stats, update } from "./memory";
@@ -130,7 +131,9 @@ async function createSpaceRoute(request: Request, env: Env): Promise<Response> {
   const auth = request.headers.get("Authorization") ?? "";
   const provided = /^Bearer\s+(.+)$/i.exec(auth.trim())?.[1]?.trim();
   if (!env.ADMIN_SECRET) throw new ApiError("Server missing ADMIN_SECRET", 500);
-  if (provided !== env.ADMIN_SECRET) throw new ApiError("Admin authorization required", 401);
+  if (!provided || !timingSafeEqual(provided, env.ADMIN_SECRET)) {
+    throw new ApiError("Admin authorization required", 401);
+  }
 
   const body = await readJson(request).catch(() => ({}) as Record<string, unknown>);
   const name = typeof body.name === "string" ? body.name.slice(0, 80) : "";

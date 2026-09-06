@@ -9,6 +9,20 @@ export async function sha256hex(input: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Constant-time string comparison (avoids leaking length/prefix via timing). */
+export function timingSafeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  // Compare a fixed-length digest so length differences don't short-circuit.
+  let diff = ab.length ^ bb.length;
+  const len = Math.max(ab.length, bb.length);
+  for (let i = 0; i < len; i++) {
+    diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
+  }
+  return diff === 0;
+}
+
 /** Generate a fresh, URL-safe API key: `rcl_<43 base64url chars>`. */
 export function generateApiKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
